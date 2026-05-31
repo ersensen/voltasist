@@ -53,7 +53,10 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${KEY_ID}.p8" \
             -allowProvisioningUpdates \
-            OTHER_SWIFT_FLAGS=""
+            OTHER_SWIFT_FLAGS="" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=9DM9S4CD3U \
+            CODE_SIGN_IDENTITY="Apple Distribution"
 
       - name: Export IPA
         env:
@@ -68,7 +71,10 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${KEY_ID}.p8" \
             -allowProvisioningUpdates \
-            OTHER_SWIFT_FLAGS=""
+            OTHER_SWIFT_FLAGS="" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM=9DM9S4CD3U \
+            CODE_SIGN_IDENTITY="Apple Distribution"
 
       - name: Upload to TestFlight
         env:

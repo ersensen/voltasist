@@ -52,7 +52,8 @@ jobs:
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${KEY_ID}.p8" \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            OTHER_SWIFT_FLAGS=""
 
       - name: Export IPA
         env:
@@ -66,7 +67,8 @@ jobs:
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${KEY_ID}.p8" \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            OTHER_SWIFT_FLAGS=""
 
       - name: Upload to TestFlight
         env:

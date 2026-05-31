@@ -1,0 +1,14 @@
+{
+  "name": "voltasist",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "eas-build-pre-install": "bash scripts/eas-pre-install.sh"
+  },
+  "dependencies": {
+    "expo": "^51.0.0"
+  },
+  "devDependencies": {
+    "eas-cli": "^20.0.0"
+  }
+}

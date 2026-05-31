@@ -55,8 +55,7 @@ jobs:
             -allowProvisioningUpdates \
             OTHER_SWIFT_FLAGS="" \
             CODE_SIGN_STYLE=Automatic \
-            DEVELOPMENT_TEAM=9DM9S4CD3U \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            DEVELOPMENT_TEAM=9DM9S4CD3U
 
       - name: Export IPA
         env:
@@ -73,8 +72,7 @@ jobs:
             -allowProvisioningUpdates \
             OTHER_SWIFT_FLAGS="" \
             CODE_SIGN_STYLE=Automatic \
-            DEVELOPMENT_TEAM=9DM9S4CD3U \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            DEVELOPMENT_TEAM=9DM9S4CD3U
 
       - name: Upload to TestFlight
         env:

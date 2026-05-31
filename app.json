@@ -8,6 +8,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ersensen.voltasist"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "dbeb962c-df15-4fc7-974b-653674889ba1"
+      }
     }
   }
 }

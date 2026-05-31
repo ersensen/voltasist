@@ -3,6 +3,8 @@ workflows:
     name: VoltAsist iOS TestFlight Release
     max_build_duration: 30
     instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: app_store_connect # The name of your App Store Connect integration in Codemagic UI
     environment:
       xcode: latest
       cocoapods: default
@@ -13,8 +15,9 @@ workflows:
     triggering:
       events:
         - push
-      branches:
-        - main
+      branch_patterns:
+        - pattern: 'main'
+          include: true
     scripts:
       - name: Generate Xcode Project via XcodeGen
         script: |

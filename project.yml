@@ -25,26 +25,3 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
         release:
           PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
-    dependencies:
-      - package: Firebase
-        product: FirebaseAuth
-      - package: Firebase
-        product: FirebaseFirestore
-      - package: Firebase
-        product: FirebaseAnalytics
-      - package: Firebase
-        product: FirebaseCrashlytics
-      - package: Firebase
-        product: FirebaseStorage
-      - package: GoogleSignIn
-        product: GoogleSignIn
-      - package: GoogleSignIn
-        product: GoogleSignInSwift
-
-packages:
-  Firebase:
-    url: https://github.com/firebase/firebase-ios-sdk.git
-    from: 11.0.0
-  GoogleSignIn:
-    url: https://github.com/google/GoogleSignIn-iOS.git
-    from: 7.0.0

@@ -1,0 +1,84 @@
+# VoltAsist — Xcode Cloud CI Workflow
+# Bu dosya Xcode Cloud tarafından otomatik okunur.
+# Konum: .xcode/workflows/ci.yml (Xcode Cloud için referans)
+#
+# NOT: Xcode Cloud workflow'ları Xcode arayüzünden oluşturulur,
+# bu dosya yapılandırma referansı olarak tutulmaktadır.
+
+name: VoltAsist CI
+description: |
+  Her PR ve main push'ta otomatik build + test çalıştırır.
+  Başarılı main build'ı TestFlight'a gönderir.
+
+# ─── Tetikleyiciler ───────────────────────────────────────────────
+triggers:
+  - type: pullRequest
+    branches:
+      - main
+      - develop
+      - "feature/*"
+    actions:
+      - build
+      - test
+
+  - type: push
+    branch: main
+    actions:
+      - build
+      - test
+      - archive
+      - distribute
+
+# ─── Ortam ───────────────────────────────────────────────────────
+environment:
+  xcode: latest-release      # Xcode 16.x
+  macOS: latest-release
+  iOS: latest-two-major      # iOS 17, 18
+
+# ─── Aksiyonlar ──────────────────────────────────────────────────
+actions:
+  build:
+    name: Build VoltAsist
+    scheme: VoltAsist
+    platform: iOS
+    destination:
+      - platform: iOS Simulator
+        deviceType: iPhone 16 Pro
+        os: latest
+
+  test:
+    name: Run Unit Tests
+    scheme: VoltAsist
+    platform: iOS
+    testPlan: VoltAsistTests
+    destination:
+      - platform: iOS Simulator
+        deviceType: iPhone 16 Pro
+        os: latest
+    codeCoverage: true
+    requiredCodeCoveragePercent: 70
+
+  archive:
+    name: Archive for TestFlight
+    scheme: VoltAsist
+    platform: iOS
+    configuration: Release
+
+  distribute:
+    name: Distribute to TestFlight
+    testFlight:
+      externalGroups:
+        - Beta Testers
+      releaseNotes:
+        tr: |
+          VoltAsist yeni sürümü hazır!
+          - Kablo, kompanzasyon ve solar hesaplama motorları
+          - PDF teklif oluşturma ve WhatsApp paylaşımı
+          - 81 il solar PSH veritabanı
+
+# ─── Bildirimler ─────────────────────────────────────────────────
+notifications:
+  - event: BUILD_SUCCEEDED
+    destination: SLACK_WEBHOOK    # Opsiyonel: Slack entegrasyonu
+  - event: BUILD_FAILED
+    destination: EMAIL

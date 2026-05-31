@@ -1,0 +1,53 @@
+# ─── Swift / Xcode ───────────────────────────────────────────────
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ─── Swift Package Manager ───────────────────────────────────────
+.build/
+.swiftpm/
+*.resolved          # Commit etmek istersen bu satırı sil
+
+# ─── Firebase / Gizli Dosyalar ───────────────────────────────────
+GoogleService-Info.plist
+*.p8
+*.p12
+*.mobileprovision
+AuthKey_*.p8
+
+# ─── macOS ───────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ─── Windows ─────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ─── IDE / Editörler ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── Testler / Coverage ──────────────────────────────────────────
+TestResults/
+coverage/
+*.gcda
+*.gcno
+
+# ─── CI/CD ───────────────────────────────────────────────────────
+.env
+.env.local
+secrets.yml

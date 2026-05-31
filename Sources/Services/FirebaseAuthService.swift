@@ -1,23 +1,19 @@
 import Foundation
 
-#if canImport(FirebaseAuth)
-import FirebaseAuth
-#endif
-
-/// Firebase ile kimlik doğrulama işlemlerini gerçekleştiren servis sınıfı.
-/// Hem gerçek Firebase Auth entegrasyonunu destekler hem de test/offline durumlar için simülasyon moduna sahiptir.
+/// Çevrimdışı ve test/önizleme durumları için mock (simüle) kimlik doğrulama işlemlerini gerçekleştiren servis sınıfı.
+/// Firebase bağımlılığı olmadan çalışır.
 public final class FirebaseAuthService: AuthServiceProtocol {
     
-    /// Testler ve çevrimdışı önizlemeler için simülasyon modunun aktif olup olmadığını belirtir.
+    /// Testler ve çevrimdışı önizlemeler için simülasyon modunun aktif olup olmadığını belirtir (Firebase olmadığı için daima true çalışır).
     private let isSimulationMode: Bool
     
     /// FirebaseAuthService başlatıcısı.
-    /// - Parameter isSimulationMode: True verilirse gerçek Firebase yerine simülasyon mantığı çalışır.
+    /// - Parameter isSimulationMode: Simülasyon modunu kontrol eder (Firebase kaldırıldığı için daima simülasyon modunda çalışır).
     public init(isSimulationMode: Bool = true) {
         self.isSimulationMode = isSimulationMode
     }
     
-    /// E-posta ve şifre ile Firebase üzerinden kullanıcı doğrulaması yapar.
+    /// E-posta ve şifre ile simüle edilmiş kullanıcı doğrulaması yapar.
     public func login(email: String, password: String, completion: @escaping (Result<User, AuthError>) -> Void) {
         // Girdi kontrolleri
         guard !email.isEmpty, !password.isEmpty else {
@@ -39,80 +35,27 @@ public final class FirebaseAuthService: AuthServiceProtocol {
             return
         }
         
-        if isSimulationMode {
-            // Çevrimdışı ve testler için simülasyon akışı (0.8 saniye gecikme ile gerçekçi ağ hissi)
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.8) {
-                // Test senaryoları doğrulaması
-                if email == "test@example.com" && password == "123456" {
-                    let mockUser = User(id: "mock_firebase_uid_12345", email: email, displayName: "Antigravity Test")
-                    DispatchQueue.main.async {
-                        completion(.success(mockUser))
-                    }
-                } else if email == "test@example.com" {
-                    DispatchQueue.main.async {
-                        completion(.failure(.wrongPassword))
-                    }
-                } else if email == "hata@example.com" {
-                    DispatchQueue.main.async {
-                        completion(.failure(.networkError))
-                    }
-                } else {
-                    DispatchQueue.main.async {
-                        completion(.failure(.userNotFound))
-                    }
+        // Çevrimdışı ve testler için simülasyon akışı (0.8 saniye gecikme ile gerçekçi ağ hissi)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.8) {
+            // Test senaryoları doğrulaması
+            if email == "test@example.com" && password == "123456" {
+                let mockUser = User(id: "mock_firebase_uid_12345", email: email, displayName: "Antigravity Test")
+                DispatchQueue.main.async {
+                    completion(.success(mockUser))
+                }
+            } else if email == "test@example.com" {
+                DispatchQueue.main.async {
+                    completion(.failure(.wrongPassword))
+                }
+            } else if email == "hata@example.com" {
+                DispatchQueue.main.async {
+                    completion(.failure(.networkError))
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion(.failure(.userNotFound))
                 }
             }
-        } else {
-            #if canImport(FirebaseAuth)
-            // Gerçek Firebase Auth entegrasyonu
-            Auth.auth().signIn(withEmail: email, password: password) { authResult, error in
-                if let error = error as NSError? {
-                    let parsedError = self.parseFirebaseError(error)
-                    completion(.failure(parsedError))
-                    return
-                }
-                
-                if let firebaseUser = authResult?.user {
-                    let user = User(
-                        id: firebaseUser.uid,
-                        email: firebaseUser.email ?? email,
-                        displayName: firebaseUser.displayName
-                    )
-                    completion(.success(user))
-                } else {
-                    completion(.failure(.unknown("Kullanıcı bilgisi alınamadı.")))
-                }
-            }
-            #else
-            // Firebase kütüphanesi yüklü değilse simülasyon moduna geri dön veya hata ver
-            completion(.failure(.unknown("Firebase SDK projenize dahil edilmemiş durumda. Lütfen simülasyon modunu kullanın veya Firebase ekleyin.")))
-            #endif
         }
     }
-    
-    #if canImport(FirebaseAuth)
-    /// Firebase'den gelen hata kodlarını anlamlı Türkçe hata mesajlarına dönüştürür.
-    private func parseFirebaseError(_ error: NSError) -> AuthError {
-        guard let errorCode = AuthErrorCode(rawValue: error.code) else {
-            return .unknown(error.localizedDescription)
-        }
-        
-        switch errorCode {
-        case .invalidEmail:
-            return .invalidEmail
-        case .wrongPassword:
-            return .wrongPassword
-        case .userNotFound:
-            return .userNotFound
-        case .networkError:
-            return .networkError
-        case .userDisabled:
-            return .unknown("Bu kullanıcı hesabı askıya alınmıştır.")
-        case .tooManyRequests:
-            return .unknown("Çok fazla başarısız deneme yapıldı. Lütfen daha sonra tekrar deneyin.")
-        default:
-            return .unknown(error.localizedDescription)
-        }
-    }
-    #endif
 }

@@ -1,0 +1,54 @@
+workflows:
+  ios-release:
+    name: VoltAsist iOS TestFlight Release
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.ersensen.voltasist"
+        XCODE_PROJECT: "VoltAsist.xcodeproj"
+        XCODE_SCHEME: "VoltAsist"
+    triggering:
+      events:
+        - push
+      branches:
+        - main
+    scripts:
+      - name: Generate Xcode Project via XcodeGen
+        script: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Initialize Keychain
+        script: |
+          keychain initialize
+      - name: Fetch Apple Signing Certificates & Profiles
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+      - name: Set up code signing settings on Xcode Project
+        script: |
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Build and Archive
+        script: |
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -archivePath build/VoltAsist.xcarchive \
+            -destination "generic/platform=iOS"
+      - name: Export IPA
+        script: |
+          xcodebuild -exportArchive \
+            -archivePath build/VoltAsist.xcarchive \
+            -exportPath build/Output \
+            -exportOptionsPlist ExportOptions.plist
+    artifacts:
+      - build/Output/*.ipa
+    publishing:
+      email:
+        recipients:
+          - ersenzekisen@gmail.com
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

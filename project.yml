@@ -1,6 +1,7 @@
 name: VoltAsist
 options:
   bundleIdPrefix: com.ersensen
+  projectFormat: 55
 targets:
   VoltAsist:
     type: application

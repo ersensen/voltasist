@@ -6,9 +6,6 @@ workflows:
     integrations:
       app_store_connect: VoltAsist
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.ersensen.voltasist
       groups:
         - ios_signing
       xcode: latest
@@ -22,10 +19,14 @@ workflows:
         script: |
           brew install xcodegen
           xcodegen generate
-      - name: Set up keychain
+      - name: Set up keychain and signing
         script: |
           keychain initialize
-          keychain add-certificates
+          echo $CM_CERTIFICATE | base64 --decode > /tmp/cert.p12
+          keychain add-certificates --certificate /tmp/cert.p12 --certificate-password $CM_CERTIFICATE_PASSWORD
+          echo $CM_PROVISIONING_PROFILE | base64 --decode > /tmp/profile.mobileprovision
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build and Archive
         script: |
           xcodebuild archive \

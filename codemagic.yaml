@@ -27,14 +27,13 @@ workflows:
           echo $CM_PROVISIONING_PROFILE | base64 --decode > /tmp/profile.mobileprovision
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-     - name: Build and Archive
+      - name: Build and Archive
         script: |
           xcodebuild archive \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -archivePath build/VoltAsist.xcarchive \
             -destination "generic/platform=iOS" \
-            -allowProvisioningUpdates \
             CODE_SIGN_STYLE=Manual \
             PROVISIONING_PROFILE_SPECIFIER="VoltAsist AppStore" \
             CODE_SIGN_IDENTITY="iPhone Distribution"

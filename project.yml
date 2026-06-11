@@ -25,3 +25,10 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
         release:
           PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
+schemes:
+  VoltAsist:
+    build:
+      targets:
+        VoltAsist: all
+    archive:
+      config: Release

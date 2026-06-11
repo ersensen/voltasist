@@ -6,41 +6,28 @@ workflows:
     integrations:
       app_store_connect: VoltAsist
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.ersensen.voltasist
       xcode: latest
       cocoapods: default
       vars:
         BUNDLE_ID: "com.ersensen.voltasist"
         XCODE_PROJECT: "VoltAsist.xcodeproj"
         XCODE_SCHEME: "VoltAsist"
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: 'main'
-          include: true
     scripts:
       - name: Generate Xcode Project via XcodeGen
         script: |
           brew install xcodegen
           xcodegen generate
-      - name: Initialize Keychain
-        script: |
-          keychain initialize
-      - name: Fetch Apple Signing Certificates & Profiles
-        script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-          keychain add-certificates
-      - name: Set up code signing settings on Xcode Project
-        script: |
-          keychain add-certificates
-          xcode-project use-profiles
       - name: Build and Archive
         script: |
           xcodebuild archive \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -archivePath build/VoltAsist.xcarchive \
-            -destination "generic/platform=iOS"
+            -destination "generic/platform=iOS" \
+            -allowProvisioningUpdates
       - name: Export IPA
         script: |
           xcodebuild -exportArchive \

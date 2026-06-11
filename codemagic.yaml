@@ -9,6 +9,8 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.ersensen.voltasist
+      groups:
+        - ios_signing
       xcode: latest
       cocoapods: default
       vars:
@@ -20,6 +22,10 @@ workflows:
         script: |
           brew install xcodegen
           xcodegen generate
+      - name: Set up keychain
+        script: |
+          keychain initialize
+          keychain add-certificates
       - name: Build and Archive
         script: |
           xcodebuild archive \

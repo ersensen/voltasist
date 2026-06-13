@@ -143,6 +143,7 @@ final class SolarCalculatorViewModel: ObservableObject {
         case .lifepo4: return 6_500
         case .agm:     return 2_800
         case .gel:     return 3_200
+        case .lithiumNMC: return 5_500
         }
     }
 

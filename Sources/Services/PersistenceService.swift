@@ -1,4 +1,4 @@
-﻿// PersistenceService.swift
+// PersistenceService.swift
 // VoltAsist
 //
 // Uygulama verilerini UserDefaults + JSON (Codable) ile yerel olarak saklar.
@@ -24,15 +24,19 @@ final class PersistenceService: ObservableObject {
     /// Tüm teklif listesi — değiştiğinde UI otomatik güncellenir
     @Published var quotes: [Quote] = []
 
+    /// Malzeme kataloğu — değiştiğinde UI otomatik güncellenir
+    @Published var materials: [Material] = []
+
     /// Uygulama geneli ayarlar
     @Published var settings: AppSettings = .defaultSettings
 
     // MARK: - UserDefaults Anahtarları
 
     private enum Keys {
-        static let customers = "voltasist_customers_v1"
-        static let quotes    = "voltasist_quotes_v1"
-        static let settings  = "voltasist_settings_v1"
+        static let customers  = "voltasist_customers_v1"
+        static let quotes     = "voltasist_quotes_v1"
+        static let settings   = "voltasist_settings_v1"
+        static let materials  = "voltasist_materials_v1"
     }
 
     // MARK: - Init
@@ -47,9 +51,10 @@ final class PersistenceService: ObservableObject {
     /// Uygulama başlangıcında UserDefaults'tan tüm veriyi yükler.
     /// Bozuk JSON varsa boş array ile güvenli şekilde devam eder.
     func loadAll() {
-        customers = load(key: Keys.customers, type: [Customer].self) ?? []
-        quotes    = load(key: Keys.quotes,    type: [Quote].self)    ?? []
-        settings  = load(key: Keys.settings,  type: AppSettings.self) ?? .defaultSettings
+        customers  = load(key: Keys.customers,  type: [Customer].self)  ?? []
+        quotes     = load(key: Keys.quotes,     type: [Quote].self)     ?? []
+        materials  = load(key: Keys.materials,  type: [Material].self)  ?? []
+        settings   = load(key: Keys.settings,   type: AppSettings.self) ?? .defaultSettings
     }
 
     // MARK: - Müşteri İşlemleri
@@ -103,6 +108,40 @@ final class PersistenceService: ObservableObject {
         guard let index = quotes.firstIndex(where: { $0.id == id }) else { return }
         quotes[index].status = status
         persist(quotes, key: Keys.quotes)
+    }
+
+    // MARK: - Malzeme İşlemleri
+
+    /// Yeni malzeme ekler ya da mevcutu günceller (id eşleşmesine göre).
+    /// - Parameter material: Eklenecek veya güncellenecek malzeme nesnesi
+    func saveMaterial(_ material: Material) {
+        var updated = material
+        updated.updatedAt = Date()
+        if let index = materials.firstIndex(where: { $0.id == material.id }) {
+            materials[index] = updated
+        } else {
+            materials.append(updated)
+        }
+        persist(materials, key: Keys.materials)
+    }
+
+    /// Verilen ID'ye sahip malzemeyi listeden ve UserDefaults'tan siler.
+    /// - Parameter id: Silinecek malzemenin UUID değeri
+    func deleteMaterial(id: UUID) {
+        materials.removeAll { $0.id == id }
+        persist(materials, key: Keys.materials)
+    }
+
+    // MARK: - Malzeme İstatistikleri
+
+    /// Stok uyarısı olan malzeme sayısı
+    var lowStockMaterialCount: Int {
+        materials.filter { $0.isLowStock && $0.minStockLevel > 0 }.count
+    }
+
+    /// Toplam stok değeri (TL)
+    var totalMaterialStockValue: Double {
+        materials.reduce(0.0) { $0 + $1.totalStockValue }
     }
 
     // MARK: - Ayar İşlemleri

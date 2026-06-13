@@ -1,4 +1,4 @@
-﻿// MainTabView.swift
+// MainTabView.swift
 // VoltAsist
 //
 // 5 sekmeli premium ana tab bar.
@@ -13,28 +13,28 @@ enum AppTab: Int, CaseIterable {
     case dashboard   = 0
     case calculator  = 1
     case solar       = 2
-    case quotes      = 3
-    case customers   = 4
+    case materials   = 3
+    case engineering = 4
 
     /// Sekme başlığı (Türkçe)
     var title: String {
         switch self {
-        case .dashboard:  return "Dashboard"
-        case .calculator: return "Hesapla"
-        case .solar:      return "Solar"
-        case .quotes:     return "Teklif"
-        case .customers:  return "Müşteriler"
+        case .dashboard:   return "Dashboard"
+        case .calculator:  return "Hesapla"
+        case .solar:       return "Solar"
+        case .materials:   return "Malzeme"
+        case .engineering: return "Mühendislik"
         }
     }
 
     /// SF Symbols ikon adı
     var icon: String {
         switch self {
-        case .dashboard:  return "house.fill"
-        case .calculator: return "bolt.fill"
-        case .solar:      return "sun.max.fill"
-        case .quotes:     return "doc.text.fill"
-        case .customers:  return "person.2.fill"
+        case .dashboard:   return "house.fill"
+        case .calculator:  return "bolt.fill"
+        case .solar:       return "sun.max.fill"
+        case .materials:   return "shippingbox.fill"
+        case .engineering: return "chart.bar.doc.horizontal.fill"
         }
     }
 }
@@ -89,13 +89,13 @@ struct MainTabView: View {
             NavigationStack {
                 SolarCalculatorView()
             }
-        case .quotes:
+        case .materials:
             NavigationStack {
-                QuoteBuilderView()
+                MaterialListView()
             }
-        case .customers:
+        case .engineering:
             NavigationStack {
-                CustomerListView()
+                EngineeringPanelView()
             }
         }
     }

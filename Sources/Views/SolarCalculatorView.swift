@@ -1,4 +1,4 @@
-﻿// SolarCalculatorView.swift
+// SolarCalculatorView.swift
 // VoltAsist
 //
 // Güneş enerji sistemi boyutlandırma ve ekonomik analiz ekranı.
@@ -278,13 +278,13 @@ struct SolarCalculatorView: View {
     @ViewBuilder
     private func resultTabs(result: SolarCalculationResult) -> some View {
         TabView {
-            panelResultView(result: result)
+            panelResultView(result)
                 .tabItem { Label("Panel", systemImage: "square.grid.3x3.fill") }
-            batteryResultView(result: result)
+            batteryResultView(result)
                 .tabItem { Label("Batarya", systemImage: "battery.100") }
-            economyResultView(result: result)
+            economyResultView(result)
                 .tabItem { Label("Ekonomi", systemImage: "chart.line.uptrend.xyaxis") }
-            co2ResultView(result: result)
+            co2ResultView(result)
                 .tabItem { Label("Çevre", systemImage: "leaf.fill") }
         }
         .frame(height: 420)

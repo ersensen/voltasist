@@ -1,4 +1,4 @@
-﻿// ElectricCalculatorViewModel.swift
+// ElectricCalculatorViewModel.swift
 // VoltAsist
 //
 // Kablo kesiti, yük analizi ve aydınlatma hesaplamalarını yöneten ViewModel.
@@ -20,14 +20,13 @@ final class ElectricCalculatorViewModel: ObservableObject {
     /// Kablo kesiti hesaplama girdi değerleri (gerçekçi varsayılanlar)
     @Published var cableInput = CableCalculationInput(
         powerKW: 3.0,
-        voltageV: 230,
-        phaseCount: .single,
-        powerFactor: 0.9,
-        cableLengthM: 20.0,
-        conductorMaterial: .copper,
-        installationMethod: .conduit,
-        ambientTemperatureC: 30,
-        simultaneousDemandFactor: 1.0
+        voltageV: 230.0,
+        phaseCount: 1,
+        lengthM: 20.0,
+        conductorType: .copper,
+        installationType: .inWall,
+        cosPhi: 0.90,
+        targetVoltageDrop: 3.0
     )
 
     /// Kablo hesaplama sonucu — nil ise henüz hesaplanmadı
@@ -40,21 +39,21 @@ final class ElectricCalculatorViewModel: ObservableObject {
 
     /// Yük analizi girdi değerleri
     @Published var loadInput = LoadCalculationInput(
-        supplyVoltageV: 400,
-        phaseCount: .three,
-        supplyFrequencyHz: 50,
-        peakDemandFactor: 0.85,
-        averagePowerFactor: 0.90,
-        electricityTariffPerKWh: 4.5,
-        monthlyOperatingHours: 720,
-        co2EmissionFactor: 0.473
+        loads: [],
+        demandFactor: 0.80,
+        cosPhi: 0.90,
+        electricityUnitPrice: 4.50,
+        monthlyUsageHours: 240.0
     )
 
     /// Yük listesi — kullanıcı ekler/çıkarır
     @Published var loadLoads: [LoadItem] = [
-        LoadItem(name: "Aydınlatma",         powerW: 500,  quantity: 10, powerFactor: 0.95, demandFactor: 0.8),
-        LoadItem(name: "Klima",              powerW: 2000, quantity: 3,  powerFactor: 0.85, demandFactor: 0.7),
-        LoadItem(name: "Bilgisayar",         powerW: 300,  quantity: 8,  powerFactor: 0.90, demandFactor: 0.9)
+        LoadItem(name: "Aydınlatma", powerW: 500, quantity: 10,
+                 hoursPerDay: 8.0, category: .lighting),
+        LoadItem(name: "Klima",      powerW: 2000, quantity: 3,
+                 hoursPerDay: 6.0, category: .heating),
+        LoadItem(name: "Bilgisayar", powerW: 300, quantity: 8,
+                 hoursPerDay: 8.0, category: .office)
     ]
 
     /// Yük analizi hesaplama sonucu
@@ -67,19 +66,14 @@ final class ElectricCalculatorViewModel: ObservableObject {
 
     /// Aydınlatma tasarımı girdi değerleri
     @Published var lightingInput = LightingCalculationInput(
-        roomLengthM: 8.0,
-        roomWidthM: 6.0,
-        roomHeightM: 3.0,
-        workPlaneHeightM: 0.85,
-        requiredLuxLevel: 500,
-        roomType: .office,
-        lightSource: .led,
-        luminousEfficacy: 120,
-        luminaireLumens: 4000,
+        areaM2: 48.0,
+        ceilingHeightM: 3.0,
+        usageType: .office,
         maintenanceFactor: 0.80,
-        reflectanceCeiling: 0.70,
-        reflectanceWall: 0.50,
-        reflectanceFloor: 0.20
+        lengthM: 8.0,
+        widthM: 6.0,
+        fixtureWatt: 18.0,
+        fixtureLumens: 2000.0
     )
 
     /// Aydınlatma hesaplama sonucu
@@ -103,15 +97,14 @@ final class ElectricCalculatorViewModel: ObservableObject {
     /// Sonuç başarılıysa cableResult güncellenir; hata durumunda cableError set edilir.
     func calculateCable() {
         cableError = nil
-        do {
-            let result = try CableEngine.calculate(input: cableInput)
-            cableResult = result
-        } catch let error as CalculationError {
-            cableError  = error.localizedDescription
-            cableResult = nil
-        } catch {
-            cableError  = "Beklenmeyen hesaplama hatası: \(error.localizedDescription)"
-            cableResult = nil
+        guard cableInput.isValid else {
+            cableError = "Lütfen tüm kablo hesaplama alanlarını doğru doldurun."
+            return
+        }
+        let result = CableEngine.calculate(input: cableInput)
+        cableResult = result
+        if let warning = result.warningMessage {
+            cableError = warning
         }
     }
 
@@ -124,16 +117,10 @@ final class ElectricCalculatorViewModel: ObservableObject {
             loadError = "Lütfen en az bir yük kalemi ekleyin."
             return
         }
-        do {
-            let result = try LoadEngine.calculate(input: loadInput, loads: loadLoads)
-            loadResult = result
-        } catch let error as CalculationError {
-            loadError  = error.localizedDescription
-            loadResult = nil
-        } catch {
-            loadError  = "Yük hesaplama hatası: \(error.localizedDescription)"
-            loadResult = nil
-        }
+        // LoadCalculationInput'a mevcut yük listesini ata
+        var inputWithLoads = loadInput
+        inputWithLoads.loads = loadLoads
+        loadResult = LoadEngine.calculate(input: inputWithLoads)
     }
 
     // MARK: - Aydınlatma Hesaplama
@@ -141,16 +128,11 @@ final class ElectricCalculatorViewModel: ObservableObject {
     /// LightingEngine'i çağırarak aydınlatma tasarımı hesaplaması yapar.
     func calculateLighting() {
         lightingError = nil
-        do {
-            let result = try LightingEngine.calculate(input: lightingInput)
-            lightingResult = result
-        } catch let error as CalculationError {
-            lightingError  = error.localizedDescription
-            lightingResult = nil
-        } catch {
-            lightingError  = "Aydınlatma hesaplama hatası: \(error.localizedDescription)"
-            lightingResult = nil
+        guard lightingInput.isValid else {
+            lightingError = "Lütfen tüm aydınlatma hesaplama alanlarını doğru doldurun."
+            return
         }
+        lightingResult = LightingEngine.calculate(input: lightingInput)
     }
 
     // MARK: - Yük Listesi Yönetimi
@@ -194,14 +176,14 @@ final class ElectricCalculatorViewModel: ObservableObject {
     /// Gerilim düşümü yüzdesini "2,8%" formatında döndürür
     var voltageDropFormatted: String {
         guard let r = cableResult else { return "—" }
-        return String(format: "%.1f%%", r.voltageDropPercent)
+        return String(format: "%.1f%%", r.voltageDrop)
     }
 
     /// Gerilim düşümü sınır aşımına göre uyarı rengi
     var voltageDropColor: Color {
         guard let r = cableResult else { return .primary }
-        if r.voltageDropPercent > 5.0 { return .red }
-        if r.voltageDropPercent > 3.0 { return .orange }
+        if r.voltageDrop > 5.0 { return .red }
+        if r.voltageDrop > 3.0 { return .orange }
         return .green
     }
 

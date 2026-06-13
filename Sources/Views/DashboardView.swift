@@ -1,4 +1,4 @@
-﻿// DashboardView.swift
+// DashboardView.swift
 // VoltAsist
 //
 // Premium ana ekran — istatistik kartları, hızlı erişim ve son teklifler.
@@ -564,6 +564,7 @@ extension QuoteStatus {
         case .sent:     return Color.orange
         case .approved: return Color.green
         case .rejected: return Color.red
+        case .invoiced: return Color.purple
         }
     }
     var displayName: String {
@@ -572,6 +573,7 @@ extension QuoteStatus {
         case .sent:     return "Gönderildi"
         case .approved: return "Onaylandı"
         case .rejected: return "Reddedildi"
+        case .invoiced: return "Faturalandı"
         }
     }
 }

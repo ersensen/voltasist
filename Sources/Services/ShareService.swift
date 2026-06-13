@@ -1,4 +1,4 @@
-﻿// ShareService.swift
+// ShareService.swift
 // VoltAsist
 //
 // iOS paylaşım, WhatsApp entegrasyonu ve doğrudan arama işlemlerini yönetir.
@@ -60,7 +60,7 @@ struct ShareService {
         df.locale = Locale(identifier: "tr_TR")
         df.dateFormat = "dd.MM.yyyy"
 
-        let customerName = quote.customer?.fullName ?? "Değerli Müşterimiz"
+        let customerName = quote.customerName.isEmpty ? "Değerli Müşterimiz" : quote.customerName
         let itemCount    = quote.items.count
 
         let totalFmt = NumberFormatter()

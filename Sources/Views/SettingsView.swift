@@ -1,4 +1,4 @@
-﻿// SettingsView.swift
+// SettingsView.swift
 // VoltAsist
 //
 // Firma bilgileri, fiyatlandırma parametreleri ve uygulama tercihleri ayar ekranı.
@@ -113,8 +113,8 @@ struct SettingsView: View {
                     .foregroundColor(.gray)
                 Picker("", selection: $vm.settings.defaultVatRate) {
                     Text("%0").tag(0.0)
-                    Text("%10").tag(10.0)
-                    Text("%20").tag(20.0)
+                    Text("%10").tag(0.10)
+                    Text("%20").tag(0.20)
                 }
                 .pickerStyle(.segmented)
             }

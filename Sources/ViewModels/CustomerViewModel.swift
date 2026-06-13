@@ -1,4 +1,4 @@
-﻿// CustomerViewModel.swift
+// CustomerViewModel.swift
 // VoltAsist
 //
 // Müşteri listesi arama, filtreleme ve CRUD işlemlerini yöneten ViewModel.
@@ -44,7 +44,7 @@ final class CustomerViewModel: ObservableObject {
         return sorted.filter {
             $0.fullName.lowercased().contains(query) ||
             $0.phone.lowercased().contains(query) ||
-            $0.email.lowercased().contains(query) ||
+            ($0.email?.lowercased().contains(query) ?? false) ||
             ($0.companyName?.lowercased().contains(query) ?? false)
         }
     }
@@ -78,7 +78,7 @@ final class CustomerViewModel: ObservableObject {
     /// - Returns: Müşteriye ait teklifler, tarihe göre azalan sırada
     func quotesForCustomer(id: UUID, from persistence: PersistenceService) -> [Quote] {
         persistence.quotes
-            .filter { $0.customer?.id == id }
+            .filter { $0.customerId == id }
             .sorted { $0.createdAt > $1.createdAt }
     }
 
@@ -89,7 +89,7 @@ final class CustomerViewModel: ObservableObject {
     /// - Returns: KDV dahil toplam tutar (TL)
     func totalRevenueForCustomer(id: UUID, from persistence: PersistenceService) -> Double {
         persistence.quotes
-            .filter { $0.customer?.id == id && $0.status == .approved }
+            .filter { $0.customerId == id && $0.status == .approved }
             .reduce(0.0) { $0 + $1.grandTotal }
     }
 
@@ -107,7 +107,7 @@ final class CustomerViewModel: ObservableObject {
     /// Müşterinin kaç aktif (onaylanmamış) teklifi olduğunu döndürür.
     func activeDealCount(for id: UUID, from persistence: PersistenceService) -> Int {
         persistence.quotes.filter {
-            $0.customer?.id == id && ($0.status == .sent || $0.status == .draft)
+            $0.customerId == id && ($0.status == .sent || $0.status == .draft)
         }.count
     }
 

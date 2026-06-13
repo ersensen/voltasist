@@ -1,4 +1,4 @@
-﻿// QuoteItem.swift
+// QuoteItem.swift
 // VoltAsist
 //
 // Teklif kalemi ve teklif belgesi modeli.
@@ -10,21 +10,25 @@ import Foundation
 
 /// Teklif kaleminin türünü belirtir
 enum QuoteItemCategory: String, Codable, CaseIterable, Identifiable {
-    case material  = "Malzeme"
-    case labor     = "İşçilik"
-    case equipment = "Ekipman"
-    case service   = "Hizmet"
-    case other     = "Diğer"
+    case material     = "Malzeme"
+    case labor        = "İşçilik"
+    case equipment    = "Ekipman"
+    case service      = "Hizmet"
+    case compensation = "Kompanzasyon"
+    case solar        = "Solar"
+    case other        = "Diğer"
 
     var id: String { rawValue }
 
     var systemIcon: String {
         switch self {
-        case .material:  return "shippingbox.fill"
-        case .labor:     return "person.fill.checkmark"
-        case .equipment: return "wrench.fill"
-        case .service:   return "star.fill"
-        case .other:     return "ellipsis.circle.fill"
+        case .material:     return "shippingbox.fill"
+        case .labor:        return "person.fill.checkmark"
+        case .equipment:    return "wrench.fill"
+        case .service:      return "star.fill"
+        case .compensation: return "waveform.path.ecg"
+        case .solar:        return "sun.max.fill"
+        case .other:        return "ellipsis.circle.fill"
         }
     }
 }
@@ -98,7 +102,32 @@ struct QuoteItem: Codable, Identifiable {
         self.vatRate = vatRate
         self.discount = discount
     }
+
+    /// Uyumluluk init — description parametresiyle çağrılanlar için.
+    /// vatRate parametresi > 1 ise yüzde değeri olarak kabul edilir (ör. 20 → 0.20)
+    init(
+        id: UUID = UUID(),
+        description: String,
+        unit: String = "adet",
+        quantity: Double = 1.0,
+        unitPrice: Double = 0.0,
+        vatRate: Double = 0.20,
+        category: QuoteItemCategory = .material,
+        discount: Double = 0.0
+    ) {
+        self.id = id
+        self.title = description
+        self.description = description
+        self.category = category
+        self.quantity = quantity
+        self.unit = unit
+        self.unitPrice = unitPrice
+        // vatRate > 1 ise yüzde olarak verilmiş — normalize et
+        self.vatRate = vatRate > 1.0 ? vatRate / 100.0 : vatRate
+        self.discount = discount
+    }
 }
+
 
 // MARK: - Teklif Durumu
 
@@ -265,4 +294,33 @@ struct Quote: Codable, Identifiable {
         self.workSiteAddress = workSiteAddress
         self.projectTitle = projectTitle
     }
+
+    // MARK: Uyumluluk Computed Property'leri
+
+    /// İskonto oranı (%) — discountPercent ile aynı
+    var discountRate: Double { discountPercent }
+
+    /// Müşteri özet nesnesi — ViewModel ve Service uyumluluğu için
+    var customer: QuoteCustomerProxy? {
+        guard !customerName.isEmpty else { return nil }
+        return QuoteCustomerProxy(
+            fullName: customerName,
+            name: customerName,
+            phone: customerPhone,
+            email: customerEmail,
+            address: customerAddress
+        )
+    }
 }
+
+// MARK: - QuoteCustomerProxy
+
+/// Quote'un müşteri alanlarına nesne olarak erişim sağlayan proxy
+struct QuoteCustomerProxy {
+    var fullName: String
+    var name: String
+    var phone: String
+    var email: String?
+    var address: String
+}
+

@@ -1,4 +1,4 @@
-﻿// PDFService.swift
+// PDFService.swift
 // VoltAsist
 //
 // PDFKit kullanarak profesyonel teklif belgesi oluşturur.
@@ -164,7 +164,8 @@ struct PDFService {
             .font: font(size: 8.5),
             .foregroundColor: UIColor(white: 0.78, alpha: 1)
         ]
-        let firmInfo = "\(settings.companyAddress)\nTel: \(settings.phone)  |  \(settings.email)\nVergi No: \(settings.taxNumber)  |  Vergi Dairesi: \(settings.taxOffice)"
+        let taxNoStr = settings.taxNumber ?? "—"
+        let firmInfo = "\(settings.companyAddress)\nTel: \(settings.phone)  |  \(settings.email)\nVergi No: \(taxNoStr)  |  Vergi Dairesi: \(settings.taxOffice)"
         NSAttributedString(string: firmInfo, attributes: infoAttrs)
             .draw(in: CGRect(x: 104, y: 40, width: 260, height: 65))
 
@@ -215,20 +216,20 @@ struct PDFService {
         NSAttributedString(string: "SAYIN", attributes: labelAttrs)
             .draw(at: CGPoint(x: Layout.marginH, y: startY))
 
-        let custName = quote.customer?.fullName ?? "—"
+        let custName = quote.customerName.isEmpty ? "—" : quote.customerName
         NSAttributedString(string: custName, attributes: [
             .font: font(size: 12, weight: .semibold),
             .foregroundColor: Palette.dark
         ]).draw(at: CGPoint(x: Layout.marginH, y: startY + 11))
 
         var detailY = startY + 26
-        if let addr = quote.customer?.address, !addr.isEmpty {
-            NSAttributedString(string: addr, attributes: valueAttrs)
+        if !quote.customerAddress.isEmpty {
+            NSAttributedString(string: quote.customerAddress, attributes: valueAttrs)
                 .draw(in: CGRect(x: Layout.marginH, y: detailY, width: 250, height: 32))
             detailY += 14
         }
-        if let phone = quote.customer?.phone, !phone.isEmpty {
-            NSAttributedString(string: "Tel: \(phone)", attributes: valueAttrs)
+        if !quote.customerPhone.isEmpty {
+            NSAttributedString(string: "Tel: \(quote.customerPhone)", attributes: valueAttrs)
                 .draw(at: CGPoint(x: Layout.marginH, y: detailY + 14))
             detailY += 13
         }
@@ -317,7 +318,7 @@ struct PDFService {
                 .draw(at: CGPoint(x: cols[0].x + 4, y: cursorY + 6))
 
             // Açıklama
-            NSAttributedString(string: item.description, attributes: darkAttrs)
+            NSAttributedString(string: item.description ?? item.title, attributes: darkAttrs)
                 .draw(in: CGRect(x: cols[1].x + 4,
                                  y: cursorY + 5,
                                  width: cols[1].width - 8,
@@ -341,12 +342,14 @@ struct PDFService {
                                  width: cols[4].width - 4, height: Layout.rowHeight))
 
             // KDV%
-            NSAttributedString(string: "%\(Int(item.vatRate))", attributes: numAttrs)
+            // vatRate 0.20 formatında — gösterim için yüzde'ye çevir
+            NSAttributedString(string: "%\(Int((item.vatRate * 100).rounded()))", attributes: numAttrs)
                 .draw(in: CGRect(x: cols[5].x, y: cursorY + 6,
                                  width: cols[5].width - 4, height: Layout.rowHeight))
 
             // Tutar (KDV dahil)
-            let lineTotal = item.unitPrice * item.quantity * (1 + item.vatRate / 100)
+            // vatRate model içinde 0.20 formatında saklanır (ondalik)
+            let lineTotal = item.unitPrice * item.quantity * (1.0 + item.vatRate)
             NSAttributedString(string: formatCurrency(lineTotal), attributes: numAttrs)
                 .draw(in: CGRect(x: cols[6].x, y: cursorY + 6,
                                  width: cols[6].width - 4, height: Layout.rowHeight))
@@ -415,7 +418,7 @@ struct PDFService {
 
         // Toplam KDV
         let vatTotal = quote.items.reduce(0.0) {
-            $0 + ($1.unitPrice * $1.quantity * $1.vatRate / 100)
+            $0 + ($1.unitPrice * $1.quantity * $1.vatRate)
         }
         drawTotalRow(ctx: ctx,
                      label: "KDV",

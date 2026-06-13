@@ -1,4 +1,4 @@
-﻿// SolarCalculation.swift
+// SolarCalculation.swift
 // VoltAsist
 //
 // Güneş enerjisi sistemi boyutlandırma modeli.
@@ -40,55 +40,61 @@ enum SolarSystemType: String, Codable, CaseIterable, Identifiable {
 
 /// Güneş enerji sisteminde kullanılan batarya teknolojisi
 enum BatteryType: String, Codable, CaseIterable, Identifiable {
-    case agm     = "AGM"
-    case gel     = "Jel"
-    case lifepo4 = "LiFePO4 (Lityum)"
+    case agm        = "AGM"
+    case gel        = "Jel"
+    case lifepo4    = "LiFePO4 (Lityum)"
+    case lithiumNMC = "Lityum NMC"
 
     var id: String { rawValue }
 
-    /// Deşarj Derinliği (DoD — Depth of Discharge)
-    /// AGM/Jel: %50, LiFePO4: %80
+    /// Desşarj Derinliği (DoD — Depth of Discharge)
+    /// AGM/Jel: %50, LiFePO4: %80, NMC: %80
     var dod: Double {
         switch self {
-        case .agm:     return 0.50
-        case .gel:     return 0.50
-        case .lifepo4: return 0.80
+        case .agm:        return 0.50
+        case .gel:        return 0.50
+        case .lifepo4:    return 0.80
+        case .lithiumNMC: return 0.80
         }
     }
 
-    /// Şarj/Deşarj çevrim verimi
+    /// Şarj/Desşarj çevrim verimi
     var efficiency: Double {
         switch self {
-        case .agm:     return 0.85
-        case .gel:     return 0.85
-        case .lifepo4: return 0.97
+        case .agm:        return 0.85
+        case .gel:        return 0.85
+        case .lifepo4:    return 0.97
+        case .lithiumNMC: return 0.97
         }
     }
 
     /// Yaklaşık piyasa fiyatı (TL/kWh — 2024 yılı)
     var pricePerKWh: Double {
         switch self {
-        case .agm:     return 4_500.0
-        case .gel:     return 5_200.0
-        case .lifepo4: return 9_500.0
+        case .agm:        return 4_500.0
+        case .gel:        return 5_200.0
+        case .lifepo4:    return 9_500.0
+        case .lithiumNMC: return 8_000.0
         }
     }
 
     /// Beklenen ömür (yıl)
     var lifespanYears: Int {
         switch self {
-        case .agm:     return 5
-        case .gel:     return 7
-        case .lifepo4: return 15
+        case .agm:        return 5
+        case .gel:        return 7
+        case .lifepo4:    return 15
+        case .lithiumNMC: return 12
         }
     }
 
     /// Beklenen çevrim sayısı
     var cycleCount: Int {
         switch self {
-        case .agm:     return 500
-        case .gel:     return 800
-        case .lifepo4: return 4000
+        case .agm:        return 500
+        case .gel:        return 800
+        case .lifepo4:    return 4000
+        case .lithiumNMC: return 3000
         }
     }
 }
@@ -233,8 +239,42 @@ struct SolarCalculationResult: Codable {
 
     // MARK: Çatı Yönü Düzeltmesi
 
-    /// Yön ve eğim düzeltme katsayısı (0.7–1.0)
+    /// Çatı yönü düzelme katsayısı (0.7–1.0)
     var orientationFactor: Double
+
+    // MARK: Uyumluluk Alias'ları
+
+    /// Sistem kapasitesi (kWp) — requiredCapacityKWp ile aynı
+    var systemCapacityKWp: Double { requiredCapacityKWp }
+
+    /// Yıllık tasarruf (TL) — annualSavingTL ile aynı
+    var annualSavingsTL: Double { annualSavingTL }
+
+    /// 25 yıllık CO₂ tasarrufu (ton) — yıllık değerin 25 katlık tahmini
+    var co2SavingsTon25Years: Double {
+        // 25 yıllık kumulatif: yıllık değer üretim dizisinden hesaplanır
+        let totalKWh = yearlyProduction.reduce(0, +)
+        return (totalKWh * 0.42) / 1000.0
+    }
+
+    /// Batarya grubu (off-grid/hybrid için) — nil ise batarya yok
+    var batteryBank: BatteryBankSummary? {
+        guard batteryCapacityKWh > 0 else { return nil }
+        return BatteryBankSummary(
+            totalCapacityKWh: batteryCapacityKWh,
+            totalCapacityAh: batteryCapacityAh,
+            batteryCount: batteryCount
+        )
+    }
+}
+
+// MARK: - Batarya Grubu Özeti
+
+/// Batarya grubu özet veri yapısı
+struct BatteryBankSummary {
+    var totalCapacityKWh: Double
+    var totalCapacityAh: Double
+    var batteryCount: Int
 }
 
 // MARK: - Türk İlleri (81 İl) — PSH Değerleri
@@ -326,6 +366,9 @@ enum TurkishCity: String, Codable, CaseIterable, Identifiable {
     case zonguldak  = "Zonguldak"
 
     var id: String { rawValue }
+
+    /// Şehrin görüntülenecek adı (rawValue ile aynı)
+    var displayName: String { rawValue }
 
     /// Günlük ortalama Tepe Güneş Saati (PSH — saat/gün)
     /// ETKB YEGM Güneş Atlası + SolarGIS verileri
@@ -424,7 +467,7 @@ enum TurkishCity: String, Codable, CaseIterable, Identifiable {
              .kirklareli, .canakkale, .balikesir:
             return "Marmara"
         case .trabzon, .rize, .giresun, .ordu, .samsun, .sinop, .zonguldak, .bartin,
-             .bolu, .duzce, .artvin, .giresun:
+             .bolu, .duzce, .artvin:
             return "Karadeniz"
         case .erzurum, .kars, .ardahan, .agri, .igdir, .van, .mus, .bitlis,
              .hakkari, .siirt, .sirnak, .batman, .mardin, .diyarbakir, .sanliurfa,

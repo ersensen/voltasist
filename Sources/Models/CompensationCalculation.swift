@@ -1,4 +1,4 @@
-﻿// CompensationCalculation.swift
+// CompensationCalculation.swift
 // VoltAsist
 //
 // Reaktif güç kompanzasyonu hesaplama modeli.
@@ -230,4 +230,19 @@ struct CompensationResult: Codable {
 
     /// Kompanzasyon sonrası görünür güç (kVA)
     var newApparentKVA: Double
+
+    // MARK: Uyumluluk Alias'ları
+
+    /// Gerekli kondansatör kapasitesi (kVAr) — requiredQcKVAr ile aynı
+    var requiredCapacityKVAr: Double { requiredQcKVAr }
+
+    /// Yıllık toplam tasarruf (TL)
+    var annualSavingsTL: Double { totalMonthlySavingTL * 12.0 }
+
+    /// Transformatör kapasite kazanımı (%) — capacityGainKVA / trafo kapasite varsayımı
+    var transformerCapacityGainPercent: Double {
+        guard let gain = capacityGainKVA, gain > 0 else { return 0 }
+        // Trafo kapasitesi bilinmiyorsa 1000 kVA referans al
+        return (gain / 1000.0) * 100.0
+    }
 }

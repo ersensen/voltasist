@@ -1,4 +1,4 @@
-﻿// CableCalculatorView.swift
+// CableCalculatorView.swift
 // VoltAsist
 //
 // Premium kablo kesit hesaplama ekranı.
@@ -399,7 +399,6 @@ struct CableCalculatorView: View {
     // MARK: - Hesaplama Mantığı
 
     private func calculate() {
-        // Geçersiz girdi kontrolü
         guard let power = Double(powerKW.replacingOccurrences(of: ",", with: ".")),
               let length = Double(lengthM.replacingOccurrences(of: ",", with: ".")),
               power > 0, length > 0 else {
@@ -411,19 +410,19 @@ struct CableCalculatorView: View {
         isCalculating = true
         resultVisible = false
 
-        // Küçük gecikme ile hesap (animate için)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             let voltage = voltageOptions[voltageSelection]
-            let res = CableEngine.calculate(
-                power: power,
-                voltage: voltage,
-                phases: phaseCount,
-                length: length,
-                conductor: conductorType,
-                installation: installationType,
+            let input = CableCalculationInput(
+                powerKW: power,
+                voltageV: voltage,
+                phaseCount: phaseCount,
+                lengthM: length,
+                conductorType: conductorType,
+                installationType: installationType,
                 cosPhi: cosPhi,
-                targetDrop: targetDrop
+                targetVoltageDrop: targetDrop
             )
+            let res = CableEngine.calculate(input: input)
             isCalculating = false
             withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
                 result = res
@@ -440,107 +439,6 @@ struct CableCalculatorView: View {
             let impact = UINotificationFeedbackGenerator()
             impact.notificationOccurred(.success)
         }
-    }
-}
-
-// MARK: - CableEngine (Hesaplama Motoru)
-
-/// Kablo kesit hesaplama iş mantığı — IEC 60364-5-52
-enum CableEngine {
-
-    /// Standart iletken kesit serisi (mm²)
-    static let standardSections: [Double] = [
-        1.5, 2.5, 4.0, 6.0, 10.0, 16.0, 25.0, 35.0, 50.0, 70.0, 95.0, 120.0, 150.0, 185.0, 240.0
-    ]
-
-    /// Kesit → akım kapasitesi tablosu (bakır, sıva altı)
-    static let copperCurrentTable: [Double: Double] = [
-        1.5: 16, 2.5: 22, 4.0: 30, 6.0: 38, 10.0: 52, 16.0: 70,
-        25.0: 90, 35.0: 110, 50.0: 130, 70.0: 165, 95.0: 200,
-        120.0: 235, 150.0: 265, 185.0: 305, 240.0: 355
-    ]
-
-    /// Standart sigorta değerleri (A)
-    static let standardFuses: [Int] = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250]
-
-    static func calculate(
-        power: Double,
-        voltage: Double,
-        phases: Int,
-        length: Double,
-        conductor: ConductorType,
-        installation: InstallationType,
-        cosPhi: Double,
-        targetDrop: Double
-    ) -> CableCalculationResult {
-
-        // 1. Hat akımı hesabı
-        let currentA: Double
-        if phases == 1 {
-            // I = P / (V × cos φ)
-            currentA = (power * 1000.0) / (voltage * cosPhi)
-        } else {
-            // I = P / (√3 × V × cos φ)
-            currentA = (power * 1000.0) / (sqrt(3.0) * voltage * cosPhi)
-        }
-
-        // 2. Gerilim düşümüne göre minimum kesit
-        // ΔU% = (2 × ρ × L × I) / (S × V) × 100 → S = (2 × ρ × L × I × 100) / (ΔU% × V)
-        let rho = conductor.resistivity
-        let factor: Double = phases == 1 ? 2.0 : sqrt(3.0)
-        let dropVoltage = (targetDrop / 100.0) * voltage
-        let sectionByDrop = (factor * rho * length * currentA) / dropVoltage
-
-        // 3. Akım kapasitesine göre minimum kesit — derating ile
-        let derating = installation.derating
-        var sectionByCurrentRaw: Double = 1.5
-        let scaleFactor = conductor == .copper ? 1.0 : 0.78
-        for section in standardSections {
-            let capacity = (copperCurrentTable[section] ?? 0) * scaleFactor * derating
-            if capacity >= currentA {
-                sectionByCurrentRaw = section
-                break
-            }
-        }
-
-        // 4. İki metodun büyüğünü standart seriden seç
-        let requiredSection = max(sectionByDrop, sectionByCurrentRaw)
-        let recommendedSection = standardSections.first { $0 >= requiredSection } ?? standardSections.last!
-
-        // 5. Gerçek gerilim düşümü hesabı
-        let actualVoltageDrop: Double
-        if phases == 1 {
-            actualVoltageDrop = (2.0 * rho * length * currentA) / recommendedSection
-        } else {
-            actualVoltageDrop = (sqrt(3.0) * rho * length * currentA) / recommendedSection
-        }
-        let actualVoltageDropPercent = (actualVoltageDrop / voltage) * 100.0
-
-        // 6. Akım kapasitesi (seçilen kesite göre)
-        let capacity = (copperCurrentTable[recommendedSection] ?? 0) * scaleFactor * derating
-
-        // 7. Önerilen sigorta
-        let fuseA = standardFuses.first { Double($0) >= currentA } ?? standardFuses.last!
-
-        // 8. Uyarı mesajı
-        var warning: String? = nil
-        if actualVoltageDropPercent > targetDrop {
-            warning = "Gerilim düşümü hedefi aşıldı! IEC sınırı: %\(String(format: "%.0f", targetDrop))"
-        } else if currentA / capacity > 0.85 {
-            warning = "Yüksek yük oranı: %\(String(format: "%.0f", (currentA/capacity)*100)). Bir üst kesit değerlendirin."
-        }
-
-        return CableCalculationResult(
-            currentA: currentA,
-            requiredSectionMM2: requiredSection,
-            recommendedSectionMM2: recommendedSection,
-            voltageDrop: actualVoltageDropPercent,
-            voltageDropV: actualVoltageDrop,
-            recommendedFuseA: fuseA,
-            isVoltagDropOK: actualVoltageDropPercent <= targetDrop,
-            warningMessage: warning,
-            currentCapacityA: capacity
-        )
     }
 }
 

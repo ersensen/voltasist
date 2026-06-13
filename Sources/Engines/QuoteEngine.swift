@@ -1,4 +1,4 @@
-﻿// QuoteEngine.swift
+// QuoteEngine.swift
 // VoltAsist
 //
 // Teklif oluşturma ve hesaplama motoru.
@@ -411,5 +411,17 @@ struct QuoteEngine {
         case 50..<95: return 40
         default:      return 50
         }
+    }
+    /// Yeni boş teklif oluştur — ViewModel uyumlu API
+    /// - Parameters:
+    ///   - customer: Müşteri (opsiyonel)
+    ///   - settings: Uygulama ayarları
+    /// - Returns: Oluşturulan Quote
+    static func newQuote(customer: Customer? = nil, settings: AppSettings) -> Quote {
+        return createNewQuote(
+            sequence: settings.nextQuoteNumber,
+            settings: settings,
+            customer: customer
+        )
     }
 }

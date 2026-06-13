@@ -1,4 +1,4 @@
-﻿// QuoteBuilderView.swift
+// QuoteBuilderView.swift
 // VoltAsist
 //
 // Kalem kalem detaylı fiyat teklifi oluşturma ekranı.
@@ -370,7 +370,7 @@ struct QuoteItemRow: View {
                 Text(formatTL(item.totalPrice))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(amber)
-                Text("KDV %\(Int(item.vatRate))")
+                Text("KDV %\(Int((item.vatRate * 100).rounded()))")
                     .font(.system(size: 10))
                     .foregroundColor(.gray)
             }
@@ -419,34 +419,24 @@ struct QuoteStatusBadge: View {
 extension QuoteItemCategory {
     var icon: String {
         switch self {
-        case .material:  return "shippingbox.fill"
-        case .labor:     return "person.badge.plus"
-        case .equipment: return "wrench.and.screwdriver.fill"
-        case .service:   return "gearshape.fill"
-        case .solar:     return "sun.max.fill"
-        case .other:     return "ellipsis.circle.fill"
+        case .material:      return "shippingbox.fill"
+        case .labor:         return "person.badge.plus"
+        case .equipment:     return "wrench.and.screwdriver.fill"
+        case .service:       return "gearshape.fill"
+        case .solar:         return "sun.max.fill"
+        case .compensation:  return "bolt.circle.fill"
+        case .other:         return "ellipsis.circle.fill"
         }
     }
     var color: Color {
         switch self {
-        case .material:  return Color(red: 1.0, green: 0.75, blue: 0.0)
-        case .labor:     return .cyan
-        case .equipment: return .orange
-        case .service:   return .purple
-        case .solar:     return .yellow
-        case .other:     return .gray
-        }
-    }
-}
-
-extension QuoteStatus {
-    var color: Color {
-        switch self {
-        case .draft:     return .gray
-        case .sent:      return .blue
-        case .approved:  return .green
-        case .rejected:  return .red
-        case .invoiced:  return .purple
+        case .material:      return Color(red: 1.0, green: 0.75, blue: 0.0)
+        case .labor:         return .cyan
+        case .equipment:     return .orange
+        case .service:       return .purple
+        case .solar:         return .yellow
+        case .compensation:  return .mint
+        case .other:         return .gray
         }
     }
 }
@@ -557,7 +547,7 @@ struct QuoteItemFormSheet: View {
                             quantity: quantity,
                             unit: unit,
                             unitPrice: unitPrice,
-                            vatRate: vatRate,
+                            vatRate: vatRate > 1.0 ? vatRate / 100.0 : vatRate,
                             discount: discount / 100
                         )
                         onSave(newItem)
@@ -575,7 +565,8 @@ struct QuoteItemFormSheet: View {
                     quantity    = item.quantity
                     unit        = item.unit
                     unitPrice   = item.unitPrice
-                    vatRate     = item.vatRate
+                    // vatRate model 0.20 formatında, State 20.0 formatında
+                    vatRate     = item.vatRate > 1.0 ? item.vatRate : item.vatRate * 100
                     discount    = item.discount * 100
                 }
             }

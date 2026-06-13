@@ -1,4 +1,4 @@
-﻿// SettingsViewModel.swift
+// SettingsViewModel.swift
 // VoltAsist
 //
 // Uygulama ayarlarını görüntüleme ve kaydetme işlemlerini yöneten ViewModel.
@@ -78,11 +78,11 @@ final class SettingsViewModel: ObservableObject {
             validationError = "Telefon numarası boş bırakılamaz."
             return false
         }
-        if settings.defaultVATRate < 0 || settings.defaultVATRate > 100 {
-            validationError = "KDV oranı 0–100 arasında olmalıdır."
+        if settings.defaultVatRate < 0 || settings.defaultVatRate > 1.01 {
+            validationError = "KDV oranı 0.0–1.0 arasında olmalıdır (0.20 = %20)."
             return false
         }
-        if settings.defaultValidityDays < 1 {
+        if settings.quoteValidityDays < 1 {
             validationError = "Geçerlilik süresi en az 1 gün olmalıdır."
             return false
         }
@@ -92,14 +92,14 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Görüntüleme Yardımcıları
 
-    /// Varsayılan KDV oranını "%18" formatında döndürür.
+    /// Varsayılan KDV oranını "%20" formatında döndürür.
     var vatRateFormatted: String {
-        "%\(Int(settings.defaultVATRate))"
+        "%\(Int((settings.defaultVatRate * 100).rounded()))"
     }
 
     /// Teklif geçerlilik süresini "30 gün" formatında döndürür.
     var validityDaysFormatted: String {
-        "\(settings.defaultValidityDays) gün"
+        "\(settings.quoteValidityDays) gün"
     }
 
     // MARK: - Otomatik Doğrulama Kurulumu

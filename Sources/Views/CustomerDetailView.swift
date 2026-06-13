@@ -1,4 +1,4 @@
-﻿// CustomerDetailView.swift
+// CustomerDetailView.swift
 // VoltAsist
 //
 // Müşteri profili, teklif geçmişi ve iletişim aksiyonları ekranı.
@@ -21,13 +21,13 @@ struct CustomerDetailView: View {
 
     private var quotes: [Quote] {
         persistence.quotes
-            .filter { $0.customer?.id == customer.id }
+            .filter { $0.customerId == customer.id }
             .sorted { $0.createdAt > $1.createdAt }
     }
 
     private var totalRevenue: Double {
         persistence.quotes
-            .filter { $0.customer?.id == customer.id && $0.status == .approved }
+            .filter { $0.customerId == customer.id && $0.status == .approved }
             .reduce(0) { $0 + $1.grandTotal }
     }
 
@@ -63,9 +63,10 @@ struct CustomerDetailView: View {
                 QuoteBuilderView(existingQuote: Quote(
                     id: UUID(),
                     quoteNumber: QuoteEngine.generateQuoteNumber(sequence: (persistence.quotes.count + 1)),
-                    customer: customer,
+                    customerId: customer.id,
                     customerName: customer.fullName,
                     customerPhone: customer.phone,
+                    customerEmail: customer.email,
                     customerAddress: customer.address,
                     items: [],
                     notes: nil,
@@ -109,8 +110,14 @@ struct CustomerDetailView: View {
                     .font(.system(size: 13))
                     .foregroundColor(.gray)
 
-                if !customer.email.isEmpty {
-                    Label(customer.email, systemImage: "envelope.fill")
+                if !customer.address.isEmpty {
+                    Label(customer.address, systemImage: "mappin.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                if let email = customer.email, !email.isEmpty {
+                    Label(email, systemImage: "envelope.fill")
                         .font(.system(size: 12))
                         .foregroundColor(.gray)
                         .lineLimit(1)
@@ -141,13 +148,13 @@ struct CustomerDetailView: View {
                 ShareService.openWhatsApp(phone: customer.phone, message: message)
             }
             contactBtn(icon: "envelope.fill", label: "E-posta", color: .blue) {
-                if !customer.email.isEmpty,
-                   let url = URL(string: "mailto:\(customer.email)") {
+                if let email = customer.email, !email.isEmpty,
+                   let url = URL(string: "mailto:\(email)") {
                     UIApplication.shared.open(url)
                 }
             }
-            .opacity(customer.email.isEmpty ? 0.4 : 1.0)
-            .disabled(customer.email.isEmpty)
+            .opacity((customer.email?.isEmpty ?? true) ? 0.4 : 1.0)
+            .disabled(customer.email?.isEmpty ?? true)
         }
     }
 
@@ -285,9 +292,11 @@ struct CustomerDetailView: View {
 #Preview {
     NavigationStack {
         CustomerDetailView(customer: Customer(
-            id: UUID(), fullName: "Ahmet Yılmaz", phone: "05321234567",
-            email: "ahmet@example.com", address: "İstanbul, Kadıköy",
-            companyName: "Yılmaz Elektrik Ltd.", notes: nil, createdAt: Date()
+            id: UUID(),
+            name: "Ahmet Yılmaz",
+            phone: "05321234567",
+            email: "ahmet@example.com",
+            address: "İstanbul, Kadıköy"
         ))
         .environmentObject(PersistenceService.shared)
     }

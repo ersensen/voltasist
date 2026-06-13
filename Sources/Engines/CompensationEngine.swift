@@ -1,4 +1,4 @@
-﻿// CompensationEngine.swift
+// CompensationEngine.swift
 // VoltAsist
 //
 // Reaktif güç kompanzasyonu hesaplama motoru.
@@ -278,12 +278,22 @@ struct CompensationEngine {
         return rate * 100.0  // % olarak
     }
 
-    // MARK: - Ana Hesaplama
+    // MARK: - Throws Varyantı (ViewModel Uyumlu)
+
+    /// Hesaplamayı yapar; giriş geçersizse CalculationError fırlatır.
+    static func calculate(input: CompensationInput) throws -> CompensationResult {
+        guard input.isValid else {
+            throw CalculationError.invalidInput("Kompanzasyon giriş parametreleri geçersiz.")
+        }
+        return _calculate(input: input)
+    }
+
+    // MARK: - Ana Hesaplama (Private)
 
     /// Kompanzasyon sisteminin tam analizini gerçekleştir
     /// - Parameter input: Tüm giriş parametreleri
     /// - Returns: Kapsamlı hesaplama sonuçları
-    static func calculate(input: CompensationInput) -> CompensationResult {
+    private static func _calculate(input: CompensationInput) -> CompensationResult {
 
         // 1. Mevcut durum
         let currentState = calculateCurrentState(input: input)
@@ -365,10 +375,8 @@ struct CompensationEngine {
             : 1.0
 
         // 7. Ekonomik analiz
-        // Toplam aylık tasarruf = TEDAŞ ceza + trafo bakır kayıp azalması (tahmini)
         let copperLossSavingMonthly: Double
         if let reduction = copperLossReduction, let trafoKVA = input.transformerKVA {
-            // Trafo nominal bakır kaybı ≈ %1.5 × kVA (tipik değer)
             let nominalCopperLossKW = trafoKVA * 0.015 / 1000.0
             copperLossSavingMonthly = nominalCopperLossKW * (reduction / 100.0) * 720.0 * 4.50
         } else {
@@ -416,3 +424,4 @@ struct CompensationEngine {
         )
     }
 }
+

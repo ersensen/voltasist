@@ -1,4 +1,4 @@
-﻿// SolarEngine.swift
+// SolarEngine.swift
 // VoltAsist
 //
 // Güneş enerjisi sistemi boyutlandırma motoru.
@@ -41,7 +41,11 @@ struct SolarEngine {
     /// Solar sistem boyutlandırmasını gerçekleştir
     /// - Parameter input: Giriş parametreleri
     /// - Returns: Hesaplama sonuçları
-    static func calculate(input: SolarCalculationInput) -> SolarCalculationResult {
+    /// - Throws: CalculationError giriş geçersizse
+    static func calculate(input: SolarCalculationInput) throws -> SolarCalculationResult {
+        guard input.isValid else {
+            throw CalculationError.invalidInput("Solar hesaplama giriş parametreleri geçersiz.")
+        }
 
         // --- 1. Günlük Tüketim ---
         let dailyConsumptionKWh = input.monthlyConsumptionKWh / 30.0

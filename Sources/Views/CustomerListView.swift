@@ -1,4 +1,4 @@
-﻿// CustomerListView.swift
+// CustomerListView.swift
 // VoltAsist
 //
 // Müşteri listesi, arama, yeni müşteri ekleme ve müşteri detayına geçiş ekranı.
@@ -217,16 +217,6 @@ struct CustomerListRow: View {
     }
 }
 
-// MARK: - Customer Uzantıları
-
-extension Customer {
-    var initials: String {
-        let parts = fullName.split(separator: " ")
-        let first = parts.first?.prefix(1) ?? ""
-        let last  = parts.dropFirst().first?.prefix(1) ?? ""
-        return (first + last).uppercased()
-    }
-}
 
 // MARK: - Müşteri Ekleme Formu
 
@@ -273,11 +263,10 @@ struct CustomerFormSheet: View {
                     Button("Kaydet") {
                         let customer = Customer(
                             id: UUID(),
-                            fullName: fullName,
+                            name: fullName,
                             phone: phone,
-                            email: email,
+                            email: email.isEmpty ? nil : email,
                             address: address,
-                            companyName: companyName.isEmpty ? nil : companyName,
                             notes: notes.isEmpty ? nil : notes,
                             createdAt: Date()
                         )

@@ -1,4 +1,4 @@
-﻿// QuoteViewModel.swift
+// QuoteViewModel.swift
 // VoltAsist
 //
 // Tek bir teklifin oluşturulması, düzenlenmesi ve paylaşımını yöneten ViewModel.
@@ -48,9 +48,10 @@ final class QuoteViewModel: ObservableObject {
     ///   - settings: Firma bilgileri ve teklif ayarları
     init(customer: Customer? = nil, settings: AppSettings) {
         self.settings = settings
-        self.currentQuote = QuoteEngine.newQuote(
-            customer: customer,
-            settings: settings
+        self.currentQuote = QuoteEngine.createNewQuote(
+            sequence: settings.nextQuoteNumber,
+            settings: settings,
+            customer: customer
         )
     }
 
@@ -120,7 +121,8 @@ final class QuoteViewModel: ObservableObject {
         ShareService.sharePDF(data: data, filename: filename)
 
         // Müşteri telefonu varsa WhatsApp'ı da aç
-        if let phone = currentQuote.customer?.phone, !phone.isEmpty {
+        let phone = currentQuote.customerPhone
+        if !phone.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                 ShareService.openWhatsApp(phone: phone, message: message)
             }
@@ -170,7 +172,7 @@ final class QuoteViewModel: ObservableObject {
 
     /// Toplam KDV tutarını formatlar.
     var vatTotalFormatted: String {
-        let vat = currentQuote.items.reduce(0.0) { $0 + $1.unitPrice * $1.quantity * $1.vatRate / 100 }
+        let vat = currentQuote.items.reduce(0.0) { $0 + $1.unitPrice * $1.quantity * $1.vatRate }
         let fmt = NumberFormatter()
         fmt.numberStyle = .currency
         fmt.currencySymbol = "₺"
@@ -178,6 +180,7 @@ final class QuoteViewModel: ObservableObject {
         fmt.maximumFractionDigits = 2
         return fmt.string(from: NSNumber(value: vat)) ?? "₺0,00"
     }
+
 
     /// Teklif kalemlerini kategoriye göre gruplandırır.
     /// Boş kategoriler döndürülmez.

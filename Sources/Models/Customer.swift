@@ -1,4 +1,4 @@
-﻿// Customer.swift
+// Customer.swift
 // VoltAsist
 //
 // Müşteri veri modeli.
@@ -71,6 +71,14 @@ struct Customer: Codable, Identifiable {
 
     // MARK: Hesaplanan Değerler
 
+    /// Müşteri tam adı (name ile aynı — uyumluluk için)
+    var fullName: String { name }
+
+    /// Şirket/firma adı (kurumsal müşteriler için ad ile aynı)
+    var companyName: String? {
+        customerType == .corporate ? name : nil
+    }
+
     /// Toplam teklif sayısı
     var totalQuoteCount: Int {
         quoteIds.count
@@ -80,6 +88,12 @@ struct Customer: Codable, Identifiable {
     var averageQuoteValue: Double {
         guard totalQuoteCount > 0 else { return 0 }
         return totalRevenueTL / Double(totalQuoteCount)
+    }
+
+    /// İsim baş harfleri — avatar ve kısa gösterim için (maks 2 karakter)
+    var initials: String {
+        let parts = name.split(separator: " ").prefix(2)
+        return parts.compactMap { $0.first.map { String($0).uppercased() } }.joined()
     }
 
     init(

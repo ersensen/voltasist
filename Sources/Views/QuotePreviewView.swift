@@ -1,4 +1,4 @@
-﻿// QuotePreviewView.swift
+// QuotePreviewView.swift
 // VoltAsist
 //
 // Teklif önizleme, PDF oluşturma ve WhatsApp/e-posta paylaşım ekranı.
@@ -180,7 +180,7 @@ struct QuotePreviewView: View {
                                 .foregroundColor(.gray)
                         }
                         HStack(spacing: 4) {
-                            Text("KDV %\(Int(item.vatRate))")
+                            Text("KDV %\(Int((item.vatRate * 100).rounded()))")
                                 .font(.system(size: 10))
                                 .padding(.horizontal, 5).padding(.vertical, 2)
                                 .background(Color.orange.opacity(0.15))
@@ -372,8 +372,7 @@ struct QuotePreviewView: View {
     private func generateAndSharePDF() {
         isGeneratingPDF = true
         DispatchQueue.global(qos: .userInitiated).async {
-            let data    = vm.generatePDF(settings: persistence.settings)
-            let fileURL = PDFService.savePDFToTemp(data: data, filename: "\(vm.currentQuote.quoteNumber).pdf")
+            let data = vm.generatePDF(settings: persistence.settings)
             DispatchQueue.main.async {
                 isGeneratingPDF = false
                 ShareService.sharePDF(data: data, filename: "\(vm.currentQuote.quoteNumber).pdf")
@@ -423,7 +422,6 @@ struct QuotePreviewView: View {
     }
 }
 
-extension QuoteStatus: CaseIterable {}
 
 #Preview {
     QuotePreviewView(vm: QuoteViewModel(settings: .defaultSettings))

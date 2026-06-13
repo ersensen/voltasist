@@ -1,4 +1,4 @@
-﻿// AppSettings.swift
+// AppSettings.swift
 // VoltAsist
 //
 // Uygulama ayarları modeli.
@@ -12,103 +12,58 @@ import Foundation
 struct AppSettings: Codable {
 
     // MARK: Firma Bilgileri
-
-    /// Firma adı veya serbest elektrikçi adı
     var companyName: String
-
-    /// Yetkili kişi / usta adı
     var ownerName: String
-
-    /// Telefon numarası
     var phone: String
-
-    /// E-posta adresi
     var email: String
-
-    /// Firma adresi
     var address: String
-
-    /// Vergi Kimlik Numarası (opsiyonel)
     var taxNumber: String?
-
-    /// İl (konum tespiti için)
     var city: TurkishCity
 
     // MARK: Fiyatlandırma
-
-    /// Saat başı işçilik ücreti (TL/saat)
     var laborRatePerHour: Double
-
-    /// Varsayılan KDV oranı — 0.20 = %20
     var defaultVatRate: Double
-
-    /// Elektrik birim fiyatı (TL/kWh) — müşteri tüketim hesabı için
     var electricityUnitPrice: Double
-
-    /// TEDAŞ reaktif enerji ceza tarifesi (TL/kVArh)
     var tedasPenaltyTariff: Double
-
-    /// Net metering tarife (TL/kWh) — solar gelir hesabı
     var feedInTariff: Double
-
-    /// Solar sistem kurulum maliyeti (TL/kWp) — varsayılan fiyat
     var installationCostPerKWp: Double
 
     // MARK: Hesaplama Varsayılanları
-
-    /// Varsayılan hedef güç faktörü — kompanzasyon hesabı için
     var defaultTargetCosPhi: Double
-
-    /// Varsayılan gerilim düşüm limiti (%) — kablo hesabı için
     var defaultVoltageDrop: Double
-
-    /// Varsayılan talep faktörü — yük hesabı için
     var defaultDemandFactor: Double
-
-    /// Varsayılan güç faktörü — yük hesabı için
     var defaultCosPhi: Double
 
     // MARK: Teklif Ayarları
-
-    /// Teklifin varsayılan geçerlilik süresi (gün)
     var quoteValidityDays: Int
-
-    /// Bir sonraki teklif için sıra numarası
     var nextQuoteNumber: Int
-
-    /// Teklif numarası ön eki — örn: "VU"
     var quotePrefix: String
-
-    /// Varsayılan teklif notu
     var defaultQuoteNote: String?
-
-    // MARK: Bildirim Ayarları
-
-    /// Teklif süresi dolmadan kaç gün önce hatırlatma
     var quoteExpiryReminderDays: Int
-
-    /// Uygulama teması — "system", "light", "dark"
     var appTheme: String
 
     // MARK: Lisans
-
-    /// Pro lisansı etkin mi?
     var isProLicenseActive: Bool
-
-    /// Lisans bitiş tarihi (opsiyonel)
     var licenseExpiryDate: Date?
 
-    // MARK: Hesaplanan Değerler
+    // MARK: Alias Properties (SettingsViewModel uyumluluğu)
+    var defaultVATRate: Double {
+        get { defaultVatRate }
+        set { defaultVatRate = newValue }
+    }
 
-    /// Teklif numarası formatı: "{prefix}-{yıl}-{3 basamak sıra}"
+    var defaultValidityDays: Int {
+        get { quoteValidityDays }
+        set { quoteValidityDays = newValue }
+    }
+
+    // MARK: Hesaplanan Değerler
     var formattedNextQuoteNumber: String {
         let year = Calendar.current.component(.year, from: Date())
         return String(format: "%@-%d-%03d", quotePrefix, year, nextQuoteNumber)
     }
 
     // MARK: Varsayılan Ayarlar
-
-    /// Gerçekçi varsayılan değerlerle önceden doldurulmuş ayarlar
     static var defaultSettings: AppSettings {
         AppSettings(
             companyName: "VoltAsist Elektrik",
@@ -118,20 +73,20 @@ struct AppSettings: Codable {
             address: "Türkiye",
             taxNumber: nil,
             city: .istanbul,
-            laborRatePerHour: 450.0,       // 2024 yılı ortalama elektrik ustası saatlik ücreti
-            defaultVatRate: 0.20,           // %20 KDV
-            electricityUnitPrice: 4.50,     // TL/kWh — 2024 EPDK tarifesi
-            tedasPenaltyTariff: 0.90,       // TL/kVArh — TEDAŞ reaktif ceza
-            feedInTariff: 3.10,             // TL/kWh — net metering YEK tarifesi
-            installationCostPerKWp: 25_000.0, // TL/kWp — ortalama solar kurulum
-            defaultTargetCosPhi: 0.95,      // TEDAŞ minimum güç faktörü
-            defaultVoltageDrop: 3.0,        // IEC 60364 önerisi %3
-            defaultDemandFactor: 0.80,      // Genel kabul görmüş talep faktörü
-            defaultCosPhi: 0.85,            // Tipik endüstriyel güç faktörü
-            quoteValidityDays: 30,          // 1 ay geçerlilik
+            laborRatePerHour: 450.0,
+            defaultVatRate: 0.20,
+            electricityUnitPrice: 4.50,
+            tedasPenaltyTariff: 0.90,
+            feedInTariff: 3.10,
+            installationCostPerKWp: 25_000.0,
+            defaultTargetCosPhi: 0.95,
+            defaultVoltageDrop: 3.0,
+            defaultDemandFactor: 0.80,
+            defaultCosPhi: 0.85,
+            quoteValidityDays: 30,
             nextQuoteNumber: 1,
             quotePrefix: "VU",
-            defaultQuoteNote: "Bu teklif malzeme hariç işçilik bedeli içermektedir. Malzeme fiyatları piyasa koşullarına göre değişkenlik gösterebilir.",
+            defaultQuoteNote: "Bu teklif malzeme hariç işçilik bedeli içermektedir.",
             quoteExpiryReminderDays: 3,
             appTheme: "system",
             isProLicenseActive: false,

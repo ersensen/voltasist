@@ -236,7 +236,7 @@ struct CustomerDetailView: View {
                 ForEach(quotes) { quote in
                     NavigationLink(destination: QuotePreviewView(vm: QuoteViewModel(existingQuote: quote, settings: persistence.settings))
                         .environmentObject(persistence)) {
-                        quoteRow(quote: quote)
+                        quoteRow(quote)
                     }
                     .buttonStyle(.plain)
                 }

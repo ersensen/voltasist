@@ -1,4 +1,4 @@
-﻿// LoadCalculatorView.swift
+// LoadCalculatorView.swift
 // VoltAsist
 //
 // Yük / Güç hesaplama ekranı.
@@ -429,69 +429,6 @@ struct LoadCalculatorView: View {
         }
         let impact = UINotificationFeedbackGenerator()
         impact.notificationOccurred(.success)
-    }
-}
-
-// MARK: - LoadEngine
-
-enum LoadEngine {
-    static let standardFuses: [Int] = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400]
-
-    static func calculate(input: LoadCalculationInput) -> LoadCalculationResult {
-        let totalConnectedW = input.loads.reduce(0.0) { $0 + $1.totalConnectedW }
-        let totalConnectedKW = totalConnectedW / 1000.0
-
-        // Talep gücü
-        let demandKW = totalConnectedKW * input.demandFactor
-
-        // Görünür güç
-        let apparentKVA = input.cosPhi > 0 ? demandKW / input.cosPhi : demandKW
-
-        // Reaktif güç
-        let sinPhi = sqrt(max(0, 1.0 - input.cosPhi * input.cosPhi))
-        let reactiveKVAr = apparentKVA * sinPhi
-
-        // Hat akımı — 400V 3-faz
-        let currentA = (apparentKVA * 1000.0) / (sqrt(3.0) * 400.0)
-
-        // Aylık kWh
-        let monthlyKWh = input.loads.reduce(0.0) { $0 + $1.dailyKWh } * 30.0
-
-        // Fatura
-        let monthlyBill = monthlyKWh * input.electricityUnitPrice
-        let yearlyBill  = monthlyBill * 12.0
-
-        // CO2 (EPDK katsayısı 0.42 kgCO₂/kWh)
-        let co2PerYear = monthlyKWh * 12.0 * 0.42
-
-        // Sigorta
-        let fuseA = standardFuses.first { Double($0) >= currentA } ?? standardFuses.last!
-
-        // Kategori dağılımı
-        var breakdown: [String: Double] = [:]
-        for load in input.loads {
-            let kw = load.totalConnectedW / 1000.0
-            breakdown[load.category.rawValue, default: 0.0] += kw
-        }
-
-        // En büyük yük
-        let largest = input.loads.max(by: { $0.totalConnectedW < $1.totalConnectedW })
-
-        return LoadCalculationResult(
-            totalConnectedKW: totalConnectedKW,
-            demandKW: demandKW,
-            apparentKVA: apparentKVA,
-            reactiveKVAr: reactiveKVAr,
-            currentA: currentA,
-            monthlyKWh: monthlyKWh,
-            monthlyBillTL: monthlyBill,
-            yearlyBillTL: yearlyBill,
-            co2KgPerYear: co2PerYear,
-            recommendedMainFuseA: fuseA,
-            categoryBreakdown: breakdown,
-            largestLoadName: largest?.name ?? "-",
-            largestLoadKW: (largest?.totalConnectedW ?? 0) / 1000.0
-        )
     }
 }
 

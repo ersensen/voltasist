@@ -1,4 +1,4 @@
-﻿// LightingCalculatorView.swift
+// LightingCalculatorView.swift
 // VoltAsist
 //
 // Aydınlatma tasarımı ve lümen hesaplama ekranı.
@@ -490,77 +490,6 @@ struct LightingCalculatorView: View {
         }
         let impact = UINotificationFeedbackGenerator()
         impact.notificationOccurred(.success)
-    }
-}
-
-// MARK: - LightingEngine
-
-/// Aydınlatma hesaplama motoru — EN 12464-1
-enum LightingEngine {
-
-    static func calculate(input: LightingCalculationInput) -> LightingCalculationResult {
-        let requiredLux = input.usageType.requiredLux
-
-        // Kullanım katsayısı (CU) — mekan endeksine göre interpolasyon
-        let k = input.roomIndex
-        let cu: Double
-        if k < 0.6      { cu = 0.50 }
-        else if k < 1.0 { cu = 0.60 }
-        else if k < 1.5 { cu = 0.68 }
-        else if k < 2.0 { cu = 0.74 }
-        else if k < 3.0 { cu = 0.78 }
-        else             { cu = 0.82 }
-
-        // Gerekli toplam lümen: Φ = E × A / (LLF × CU)
-        let requiredLumens = (requiredLux * input.areaM2) / (input.maintenanceFactor * cu)
-
-        // Armatür adedi (tavan)
-        let fixtureCount = Int(ceil(requiredLumens / input.fixtureLumens))
-
-        // Toplam güç
-        let totalWatt = Double(fixtureCount) * input.fixtureWatt
-
-        // Gerekli güç (teori)
-        let requiredWatts = requiredLumens / (input.fixtureLumens / input.fixtureWatt)
-
-        // Işık verimliliği
-        let luminousEfficacy = input.fixtureLumens / input.fixtureWatt
-
-        // Fiili lüx
-        let actualLumens = Double(fixtureCount) * input.fixtureLumens
-        let actualLux = actualLumens * input.maintenanceFactor * cu / input.areaM2
-
-        // Enerji sınıfı (lm/W baz)
-        let energyClass: String
-        if luminousEfficacy >= 130 { energyClass = "A++" }
-        else if luminousEfficacy >= 110 { energyClass = "A+" }
-        else if luminousEfficacy >= 90  { energyClass = "A" }
-        else if luminousEfficacy >= 70  { energyClass = "B" }
-        else                             { energyClass = "C" }
-
-        // LED vs Floresan tasarruf (floresan ort 60 lm/W)
-        let floresanEfficacy = 60.0
-        let ledSaving = max(0, (1.0 - floresanEfficacy / luminousEfficacy) * 100.0)
-
-        // Yıllık maliyet (4000 saat/yıl, 4.5 TL/kWh)
-        let annualCost = (totalWatt / 1000.0) * 4000.0 * 4.5
-
-        return LightingCalculationResult(
-            requiredLux: requiredLux,
-            requiredLumens: requiredLumens,
-            luminousEfficacy: luminousEfficacy,
-            requiredWatts: requiredWatts,
-            fixtureCount: fixtureCount,
-            fixtureWatt: input.fixtureWatt,
-            totalWatt: totalWatt,
-            energyClassification: energyClass,
-            ledVsFloresanSaving: ledSaving,
-            annualEnergyCostTL: annualCost,
-            utilisationCoefficient: cu,
-            maintenanceFactor: input.maintenanceFactor,
-            roomIndex: input.roomIndex,
-            actualLux: actualLux
-        )
     }
 }
 

@@ -7,7 +7,12 @@
     <key>method</key>
     <string>app-store</string>
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.ersensen.voltasist</key>
+        <string>VoltAsist AppStore</string>
+    </dict>
     <key>stripSwiftSymbols</key>
     <true/>
     <key>teamID</key>

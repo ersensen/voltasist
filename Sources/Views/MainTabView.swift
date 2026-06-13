@@ -80,7 +80,7 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
-                ElectricCalculatorView()
+                CableCalculatorView()
             }
             .tabItem {
                 Label(AppTab.calculator.title, systemImage: AppTab.calculator.icon)

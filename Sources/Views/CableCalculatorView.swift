@@ -9,8 +9,8 @@ import SwiftUI
 // MARK: - Limit Tipi
 enum CableLimitType: String, CaseIterable, Identifiable {
     case mainFeed = "Ana Dağıtım / Ana Besleme Hattı"
-    case outlet   = "Son Devre — Priz Kuvvetli Akım Hattı"
-    case lighting = "Son Devre — Aydınlatma Linye Hattı"
+    case outlet   = "Son Devre - Priz Kuvvetli Akım Hattı"
+    case lighting = "Son Devre - Aydınlatma Linye Hattı"
 
     var id: String { rawValue }
 
@@ -71,35 +71,31 @@ struct CableCalculatorView: View {
     @State private var showAddToQuote = false
     @State private var warningShake = false
 
-    // Tasarım Renkleri
-    private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
-    private let darkBG = Color(red: 0.05, green: 0.05, blue: 0.07)
-    private let cardBG = Color(red: 0.09, green: 0.09, blue: 0.12)
-    private let accentBlue = Color(red: 0.23, green: 0.51, blue: 0.96) // #3B82F6
+    // Tasarım Renkleri (Mockup'tan Birebir Alınan Premium Palet)
+    private let amber = Color(red: 1.0, green: 0.75, blue: 0.0) // Kehribar vurgu rengi
+    private let darkBG = Color(red: 0.051, green: 0.055, blue: 0.071) // #0D0E12 Ana Arka Plan
+    private let cardBG = Color(red: 0.086, green: 0.090, blue: 0.114) // #16171D Kart Arka Planı
+    private let cardBorder = Color(red: 0.133, green: 0.137, blue: 0.161) // #222329 Kart Çizgisi
+    private let selectedBlue = Color(red: 0.23, green: 0.51, blue: 0.96) // #3B82F6 Seçili Mavi
+    private let unselectedBG = Color(red: 0.071, green: 0.075, blue: 0.094) // #121318 Seçilmeyen Buton
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
-                // Header (Ekran görüntüsündeki gibi)
+                // Header (Mockup ile birebir aynı)
                 headerSection
 
                 // Üst Seçim: Otomatik Kesit Önerisi / Manuel Deneme-Yanılma
                 modeSelector
 
-                // 1. Şebeke ve Kablo Damar Yapısı
+                // 1. Şebeke ve Kablo Damar Yapısı Kartı
                 coreStructureCard
 
-                // 2. Girdiler Kartı (2x2 Grid)
-                inputsGridCard
+                // 2. Girdiler ve Limitler (Birleştirilmiş Tek Kart)
+                inputsAndLimitsCard
 
-                // 3. Tesis Bölümü Sınır Limiti
-                limitsCard
-
-                // 4. İletken Metali
-                conductorCard
-
-                // 5. Piyasa İzolasyon Sınıfı
-                insulationCard
+                // 3. İletken ve İzolasyon Sınıfı (Birleştirilmiş Tek Kart)
+                conductorAndInsulationCard
 
                 // Manuel Mod için Kesit Seçici
                 if !isAuto {
@@ -120,6 +116,8 @@ struct CableCalculatorView: View {
             .padding(.bottom, 24)
         }
         .background(darkBG.ignoresSafeArea())
+        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     // MARK: - Header
@@ -139,49 +137,74 @@ struct CableCalculatorView: View {
 
     // MARK: - Mod Seçici (Otomatik / Manuel)
     private var modeSelector: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
+            // Otomatik Kesit Önerisi
             Button {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                     isAuto = true
                     resultVisible = false
                 }
             } label: {
-                Text("? Otomatik Kesit Önerisi")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(isAuto ? .white : .gray)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(isAuto ? Color.white.opacity(0.12) : Color.clear)
-                    .cornerRadius(10)
+                HStack(spacing: 8) {
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(isAuto ? selectedBlue : .gray)
+                    Text("Otomatik Kesit Önerisi")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(isAuto ? .white : .gray)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(isAuto ? Color(red: 0.118, green: 0.161, blue: 0.243) : Color.clear)
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isAuto ? selectedBlue : Color.clear, lineWidth: 1)
+                )
             }
 
+            // Manuel Deneme-Yanılma
             Button {
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
                     isAuto = false
                     resultVisible = false
                 }
             } label: {
-                Text("⚙️ Manuel Deneme-Yanılma")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(!isAuto ? .white : .gray)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(!isAuto ? Color.white.opacity(0.12) : Color.clear)
-                    .cornerRadius(10)
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(!isAuto ? selectedBlue : .gray)
+                    Text("Manuel Deneme-Yanılma")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(!isAuto ? .white : .gray)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(!isAuto ? Color(red: 0.118, green: 0.161, blue: 0.243) : Color.clear)
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(!isAuto ? selectedBlue : Color.clear, lineWidth: 1)
+                )
             }
         }
         .padding(4)
-        .background(Color.white.opacity(0.04))
+        .background(cardBG)
         .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(cardBorder, lineWidth: 1))
     }
 
     // MARK: - 1. Şebeke ve Kablo Damar Yapısı
     private var coreStructureCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Şebeke ve Kablo Damar Yapısı", systemImage: "bolt.horizontal.fill")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundColor(amber)
+            HStack(spacing: 8) {
+                Image(systemName: "share.2") // Fork-like symbol
+                    .foregroundColor(amber)
+                    .font(.system(size: 16, weight: .bold))
+                Text("Şebeke ve Kablo Damar Yapısı")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
 
             // Gerilim Tipi
             VStack(alignment: .leading, spacing: 6) {
@@ -215,127 +238,143 @@ struct CableCalculatorView: View {
         .padding(16)
         .background(cardBG)
         .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(cardBorder, lineWidth: 1))
     }
 
-    // MARK: - 2. Girdiler Kartı (2x2 Grid)
-    private var inputsGridCard: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
-            gridInputField(label: "Aktif Yük Gücü (kW)", placeholder: "Örn: 15", text: $powerKW)
-            gridInputField(label: "Hat Metrajı (Metre)", placeholder: "Örn: 60", text: $lengthM)
-            gridInputField(label: "Güç Faktörü (Cos Phi)", placeholder: "0.90", text: $cosPhi)
-            gridInputField(label: "Demet Devre Sayısı (Cg)", placeholder: "1", text: $groupCount)
-        }
-        .padding(16)
-        .background(cardBG)
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
-    }
+    // MARK: - 2. Girdiler ve Limitler (Birleştirilmiş Tek Kart)
+    private var inputsAndLimitsCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // Inputs 2x2 grid
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
+                gridInputField(label: "Aktif Yük Gücü (kW)", placeholder: "Örn: 15", text: $powerKW)
+                gridInputField(label: "Hat Metrajı (Metre)", placeholder: "Örn: 60", text: $lengthM)
+                gridInputField(label: "Güç Faktörü (Cos Φ)", placeholder: "0.90", text: $cosPhi)
+                gridInputField(label: "Demet Devre Sayısı (Cg)", placeholder: "1", text: $groupCount)
+            }
 
-    // MARK: - 3. Tesis Bölümü Sınır Limiti
-    private var limitsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Tesis Bölümü Sınır Limiti", systemImage: "slider.horizontal.3")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundColor(amber)
-                .padding(.bottom, 4)
+            Divider()
+                .background(cardBorder)
+                .padding(.vertical, 4)
 
-            ForEach(CableLimitType.allCases) { item in
-                let isSelected = selectedLimit == item
-                Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                        selectedLimit = item
-                    }
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.rawValue)
-                                .font(.system(size: 13, weight: isSelected ? .bold : .medium))
-                                .foregroundColor(isSelected ? .white : .gray)
-                            Text(isSelected ? "Hesap limitine göre doğrulanacak" : "Seçmek için dokunun")
-                                .font(.system(size: 10))
-                                .foregroundColor(isSelected ? .white.opacity(0.7) : .gray.opacity(0.5))
+            // Tesis Bölümü Sınır Limiti Section
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Tesis Bölümü Sınır Limiti")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.bottom, 4)
+
+                VStack(spacing: 8) {
+                    ForEach(CableLimitType.allCases) { item in
+                        let isSelected = selectedLimit == item
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                selectedLimit = item
+                            }
+                        } label: {
+                            HStack {
+                                Text(item.rawValue)
+                                    .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                    .foregroundColor(isSelected ? .white : .gray)
+                                Spacer()
+                                Text(String(format: "Max %%.1f", item.limit).replacingOccurrences(of: "%%", with: "%"))
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(isSelected ? .black : .gray)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(isSelected ? amber : unselectedBG)
+                                    .cornerRadius(6)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(isSelected ? Color(red: 0.118, green: 0.161, blue: 0.243) : unselectedBG)
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(isSelected ? selectedBlue : cardBorder, lineWidth: 1)
+                            )
                         }
-                        Spacer()
-                        Text(String(format: "Max %%.1f", item.limit).replacingOccurrences(of: "%%", with: "%"))
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundColor(isSelected ? .black : amber)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(isSelected ? amber : amber.opacity(0.12))
-                            .cornerRadius(8)
+                        .buttonStyle(.plain)
                     }
-                    .padding(12)
-                    .background(isSelected ? accentBlue.opacity(0.25) : Color.white.opacity(0.03))
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(isSelected ? accentBlue.opacity(0.5) : Color.clear, lineWidth: 1)
-                    )
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(16)
         .background(cardBG)
         .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(cardBorder, lineWidth: 1))
     }
 
-    // MARK: - 4. İletken Metali
-    private var conductorCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("İletken Metali")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(amber)
-            HStack(spacing: 8) {
-                segmentButton(title: "Bakır (Cu)", selected: isCopper) {
-                    isCopper = true
+    // MARK: - 3. İletken ve İzolasyon Sınıfı (Birleştirilmiş Tek Kart)
+    private var conductorAndInsulationCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // İletken Metali
+            VStack(alignment: .leading, spacing: 10) {
+                Text("İletken Metali")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                HStack(spacing: 8) {
+                    segmentButton(title: "Bakır (Cu)", selected: isCopper) {
+                        isCopper = true
+                    }
+                    segmentButton(title: "Alüminyum (Al)", selected: !isCopper) {
+                        isCopper = false
+                    }
                 }
-                segmentButton(title: "Alüminyum (Al)", selected: !isCopper) {
-                    isCopper = false
+            }
+
+            Divider()
+                .background(cardBorder)
+                .padding(.vertical, 4)
+
+            // Piyasa İzolasyon Sınıfı
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Piyasa İzolasyon Sınıfı")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+
+                VStack(spacing: 8) {
+                    ForEach(CableInsulationClass.allCases) { item in
+                        let isSelected = selectedInsulation == item
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                selectedInsulation = item
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.rawValue)
+                                    .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                    .foregroundColor(isSelected ? .white : .gray)
+                                Text(shortDescription(for: item))
+                                    .font(.system(size: 11))
+                                    .foregroundColor(isSelected ? selectedBlue.opacity(0.8) : .gray.opacity(0.5))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(isSelected ? Color(red: 0.118, green: 0.161, blue: 0.243) : unselectedBG)
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(isSelected ? selectedBlue : cardBorder, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
         .padding(16)
         .background(cardBG)
         .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
-    }
-
-    // MARK: - 5. Piyasa İzolasyon Sınıfı
-    private var insulationCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Piyasa İzolasyon Sınıfı")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(amber)
-
-            Picker("İzolasyon Sınıfı", selection: $selectedInsulation) {
-                ForEach(CableInsulationClass.allCases) { type in
-                    Text(type.rawValue).tag(type)
-                }
-            }
-            .pickerStyle(.menu)
-            .accentColor(amber)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-
-            Text(selectedInsulation.displayName)
-                .font(.system(size: 11))
-                .foregroundColor(.gray.opacity(0.7))
-        }
-        .padding(16)
-        .background(cardBG)
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(cardBorder, lineWidth: 1))
     }
 
     // MARK: - Manuel Mod Kesit Kartı
     private var manualSectionCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Manuel Kesit Seçimi (mm²)")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(amber)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
 
             Picker("Kesit Değeri", selection: $selectedManualSection) {
                 ForEach(CableEngine.standardSections, id: \.self) { section in
@@ -349,7 +388,7 @@ struct CableCalculatorView: View {
         .padding(16)
         .background(cardBG)
         .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(cardBorder, lineWidth: 1))
     }
 
     // MARK: - Hesapla Butonu
@@ -466,7 +505,7 @@ struct CableCalculatorView: View {
             Button {
                 showAddToQuote = true
             } label: {
-                Label("Teklife Ekle", systemImage: "doc.badge.plus")
+                Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
@@ -487,15 +526,15 @@ struct CableCalculatorView: View {
     private func segmentButton(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: selected ? .bold : .medium))
                 .foregroundColor(selected ? .white : .gray)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(selected ? accentBlue : Color.white.opacity(0.04))
-                .cornerRadius(8)
+                .frame(height: 44)
+                .background(selected ? selectedBlue : unselectedBG)
+                .cornerRadius(10)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(selected ? accentBlue.opacity(0.8) : Color.clear, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(selected ? selectedBlue : cardBorder, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -511,12 +550,12 @@ struct CableCalculatorView: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.03))
+                .padding(.vertical, 12)
+                .background(unselectedBG)
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(text.wrappedValue.isEmpty ? Color.white.opacity(0.06) : amber.opacity(0.35), lineWidth: 1)
+                        .stroke(cardBorder, lineWidth: 1)
                 )
         }
     }
@@ -555,6 +594,14 @@ struct CableCalculatorView: View {
         }
     }
 
+    private func shortDescription(for insulation: CableInsulationClass) -> String {
+        switch insulation {
+        case .nym:  return "Sıva Üstü / Nemli Yer"
+        case .ttr:  return "Esnek Kordon"
+        case .nyy:  return "Yeraltı / Güç Kablosu"
+        case .n2xh: return "Halojensiz / Yangına Güvenli"
+        }
+    }
     // MARK: - Hesaplama Tetikleyicisi
     private func calculate() {
         guard let power = Double(powerKW.replacingOccurrences(of: ",", with: ".")),

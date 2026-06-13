@@ -28,7 +28,7 @@ struct CustomerDetailView: View {
     private var totalRevenue: Double {
         persistence.quotes
             .filter { $0.customerId == customer.id && $0.status == .approved }
-            .reduce(0) { $0 + $1.grandTotal }
+            .reduce(0.0) { $0 + $1.grandTotal }
     }
 
     var body: some View {

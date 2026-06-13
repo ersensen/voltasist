@@ -253,7 +253,7 @@ struct SolarCalculationResult: Codable {
     /// 25 yıllık CO₂ tasarrufu (ton) — yıllık değerin 25 katlık tahmini
     var co2SavingsTon25Years: Double {
         // 25 yıllık kumulatif: yıllık değer üretim dizisinden hesaplanır
-        let totalKWh = yearlyProduction.reduce(0, +)
+        let totalKWh = yearlyProduction.reduce(0.0, +)
         return (totalKWh * 0.42) / 1000.0
     }
 

@@ -280,7 +280,7 @@ public struct LoginView: View {
                 .stroke(Color.red.opacity(0.3), lineWidth: 1.5)
         )
         .padding(.horizontal, 24)
-        .padding(.top, UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20)
+        .padding(.top, 10)
     }
     
     /// Başarılı Giriş Ekranı

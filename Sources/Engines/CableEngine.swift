@@ -1,4 +1,4 @@
-﻿// CableEngine.swift
+// CableEngine.swift
 // VoltAsist
 //
 // IEC 60364 standardına uygun kablo kesiti ve gerilim düşümü hesaplama motoru.
@@ -47,9 +47,11 @@ struct CableEngine {
     // MARK: Ana Hesaplama
 
     /// Kablo kesiti ve gerilim düşümü hesapla
-    /// - Parameter input: Hesaplama girdi parametreleri
+    /// - Parameters:
+    ///   - input: Hesaplama girdi parametreleri
+    ///   - manualSection: Kullanıcı tarafından manuel seçilen kesit değeri (opsiyonel)
     /// - Returns: Hesaplama sonuçları
-    static func calculate(input: CableCalculationInput) -> CableCalculationResult {
+    static func calculate(input: CableCalculationInput, manualSection: Double? = nil) -> CableCalculationResult {
 
         // --- 1. Akım Hesabı ---
         // Tek faz: I = P / (V × cos φ)
@@ -63,8 +65,8 @@ struct CableEngine {
         }
 
         // --- 2. Termal Kesit (Akım Kapasitesi) ---
-        // Derating katsayısı uygulanmış gerekli kapasite
-        let deratingFactor = input.installationType.derating
+        // Derating katsayısı ve gruplama katsayısı (Cg) uygulanmış gerekli kapasite
+        let deratingFactor = input.installationType.derating * CableEngine.groupingFactor(cableCount: input.groupCount)
         let requiredCapacity = current / deratingFactor
 
         // Akım kapasitesinden minimum kesit
@@ -90,8 +92,13 @@ struct CableEngine {
         // --- 4. Gerekli Minimum Kesit (İki Kriter Maksimumu) ---
         let requiredSection = max(sectionByCapacity, sectionByVoltageDrop)
 
-        // --- 5. Standart Kesit Seçimi (Yukarı Yuvarlama) ---
-        let recommendedSection = nextStandardSection(for: requiredSection)
+        // --- 5. Standart Kesit Seçimi (Yukarı Yuvarlama veya Manuel) ---
+        let recommendedSection: Double
+        if let manual = manualSection {
+            recommendedSection = manual
+        } else {
+            recommendedSection = nextStandardSection(for: requiredSection)
+        }
 
         // --- 6. Seçilen Kesitle Gerilim Düşümü Doğrulaması ---
         let actualVoltageDrop: Double

@@ -46,7 +46,7 @@ struct LightingCalculatorView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                Spacer(minLength: 60)
+                Spacer(minLength: 24)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)

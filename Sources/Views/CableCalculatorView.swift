@@ -1,204 +1,358 @@
 // CableCalculatorView.swift
 // VoltAsist
 //
-// Premium kablo kesit hesaplama ekranı.
-// IEC 60364 standardına uygun — akım, kesit, gerilim düşümü ve sigorta hesapları.
-// Glassmorphism kart girişleri, amber gradient hesaplama butonu ve animasyonlu sonuçlar.
+// Kablo kesit analiz ekranı. Otomatik/Manuel mod, damar yapısı, 2x2 grid parametreleri,
+// tesis limitleri, iletken ve izolasyon sınıfı seçimi ile premium arayüz.
 
 import SwiftUI
 
-// MARK: - CableCalculatorView
+// MARK: - Limit Tipi
+enum CableLimitType: String, CaseIterable, Identifiable {
+    case mainFeed = "Ana Dağıtım / Ana Besleme Hattı"
+    case outlet   = "Son Devre — Priz Kuvvetli Akım Hattı"
+    case lighting = "Son Devre — Aydınlatma Linye Hattı"
 
-/// Kablo kesiti hesap ekranı — tam premium UI
+    var id: String { rawValue }
+
+    var limit: Double {
+        switch self {
+        case .mainFeed: return 2.0
+        case .outlet:   return 3.0
+        case .lighting: return 1.5
+        }
+    }
+}
+
+// MARK: - İzolasyon Sınıfı
+enum CableInsulationClass: String, CaseIterable, Identifiable {
+    case nym      = "NYM Antigron"
+    case ttr      = "H05VV-F TTR"
+    case nyy      = "NYY YVV"
+    case n2xh     = "N2XH (Halojensiz)"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .nym:  return "NYM Antigron (Sıva Üstü / Nemli Yer)"
+        case .ttr:  return "H05VV-F TTR (Esnek Kordon)"
+        case .nyy:  return "NYY YVV (Yeraltı / Güç Kablosu)"
+        case .n2xh: return "N2XH (Halojensiz / Yangına Güvenli)"
+        }
+    }
+}
+
+// MARK: - CableCalculatorView
 struct CableCalculatorView: View {
 
-    // MARK: State — Girdi Parametreleri
-    @State private var powerKW: String         = "10"
-    @State private var voltageSelection: Int   = 1      // 0 = 230V, 1 = 400V
-    @State private var phaseCount: Int         = 3      // 1 veya 3
-    @State private var lengthM: String         = "50"
-    @State private var conductorType: ConductorType     = .copper
-    @State private var installationType: InstallationType = .inWall
-    @State private var cosPhi: Double          = 0.90
-    @State private var targetDrop: Double      = 3.0
+    // MARK: - State Parametreleri
+    @State private var isAuto = true
+    @State private var isThreePhase = true // true = Trifaze (380V), false = Monofaze (220V)
+    @State private var coreCount = 4 // 3, 4, 5
+    
+    // Girdiler
+    @State private var powerKW = ""
+    @State private var lengthM = ""
+    @State private var cosPhi = "0.90"
+    @State private var groupCount = "1"
+    
+    // Limit ve İletken
+    @State private var selectedLimit: CableLimitType = .mainFeed
+    @State private var isCopper = true // true = Bakır (Cu), false = Alüminyum (Al)
+    @State private var selectedInsulation: CableInsulationClass = .nym
+    
+    // Manuel Mod İçin Seçilen Kesit
+    @State private var selectedManualSection: Double = 2.5
 
-    // MARK: State — Sonuç
+    // Hesaplama Sonucu State
     @State private var result: CableCalculationResult? = nil
-    @State private var resultVisible: Bool     = false
-    @State private var isCalculating: Bool     = false
-    @State private var showAddToQuote: Bool    = false
-    @State private var warningShake: Bool      = false
+    @State private var resultVisible = false
+    @State private var isCalculating = false
+    @State private var showAddToQuote = false
+    @State private var warningShake = false
 
-    // MARK: Tasarım
-    private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
-    private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
-    private let cardBG  = Color(red: 0.11, green: 0.11, blue: 0.14)
+    // Tasarım Renkleri
+    private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
+    private let darkBG = Color(red: 0.05, green: 0.05, blue: 0.07)
+    private let cardBG = Color(red: 0.09, green: 0.09, blue: 0.12)
+    private let accentBlue = Color(red: 0.23, green: 0.51, blue: 0.96) // #3B82F6
 
-    // MARK: Gerilim seçenekleri
-    private let voltageOptions: [Double] = [230.0, 400.0]
-
-    // MARK: Body
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 20) {
-                // Girdi kartı
-                inputCard
+            VStack(spacing: 18) {
+                // Header (Ekran görüntüsündeki gibi)
+                headerSection
 
-                // Hesapla butonu
+                // Üst Seçim: Otomatik Kesit Önerisi / Manuel Deneme-Yanılma
+                modeSelector
+
+                // 1. Şebeke ve Kablo Damar Yapısı
+                coreStructureCard
+
+                // 2. Girdiler Kartı (2x2 Grid)
+                inputsGridCard
+
+                // 3. Tesis Bölümü Sınır Limiti
+                limitsCard
+
+                // 4. İletken Metali
+                conductorCard
+
+                // 5. Piyasa İzolasyon Sınıfı
+                insulationCard
+
+                // Manuel Mod için Kesit Seçici
+                if !isAuto {
+                    manualSectionCard
+                }
+
+                // Hesapla Butonu
                 calculateButton
 
-                // Sonuç kartı (animasyonlu)
+                // Sonuç Kartı
                 if resultVisible, let res = result {
                     resultCard(res)
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: .bottom).combined(with: .opacity),
-                                removal:   .opacity
-                            )
-                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-
-                Spacer(minLength: 40)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
-        .background(bgColor.ignoresSafeArea())
+        .background(darkBG.ignoresSafeArea())
     }
 
-    // MARK: - Girdi Kartı
+    // MARK: - Header
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Kablo Kesit Analizi & Canlı Simülasyon")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("Deneme-Yanılma Seçenekli Vektörel Gerilim Düşümü Motoru")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundColor(.gray.opacity(0.8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.bottom, 4)
+    }
 
-    private var inputCard: some View {
-        VStack(spacing: 0) {
-            // Başlık
-            HStack {
-                Image(systemName: "cable.connector")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(amber)
-                Text("Hesap Parametreleri")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white)
-                Spacer()
+    // MARK: - Mod Seçici (Otomatik / Manuel)
+    private var modeSelector: some View {
+        HStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                    isAuto = true
+                    resultVisible = false
+                }
+            } label: {
+                Text("? Otomatik Kesit Önerisi")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(isAuto ? .white : .gray)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(isAuto ? Color.white.opacity(0.12) : Color.clear)
+                    .cornerRadius(10)
             }
-            .padding(.bottom, 16)
 
-            VStack(spacing: 14) {
-                // Güç
-                inputRow(label: "⚡ Güç (kW)", systemIcon: "bolt.fill") {
-                    TextField("Güç (kW)", text: $powerKW)
-                        .keyboardType(.decimalPad)
-                        .styledInput()
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                    isAuto = false
+                    resultVisible = false
                 }
+            } label: {
+                Text("⚙️ Manuel Deneme-Yanılma")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(!isAuto ? .white : .gray)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(!isAuto ? Color.white.opacity(0.12) : Color.clear)
+                    .cornerRadius(10)
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.04))
+        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.06), lineWidth: 1))
+    }
 
-                Divider().background(amber.opacity(0.15))
+    // MARK: - 1. Şebeke ve Kablo Damar Yapısı
+    private var coreStructureCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Şebeke ve Kablo Damar Yapısı", systemImage: "bolt.horizontal.fill")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(amber)
 
-                // Gerilim
-                inputRow(label: "🔌 Gerilim", systemIcon: "powerplug.fill") {
-                    Picker("Gerilim", selection: $voltageSelection) {
-                        Text("230 V (Tek Faz)").tag(0)
-                        Text("400 V (Üç Faz)").tag(1)
+            // Gerilim Tipi
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Gerilim Tipi")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.gray)
+                HStack(spacing: 8) {
+                    segmentButton(title: "Monofaze (220V)", selected: !isThreePhase) {
+                        isThreePhase = false
                     }
-                    .pickerStyle(.segmented)
-                    .onChange(of: voltageSelection) { _, val in
-                        phaseCount = val == 0 ? 1 : 3
+                    segmentButton(title: "Trifaze (380V)", selected: isThreePhase) {
+                        isThreePhase = true
                     }
                 }
+            }
 
-                Divider().background(amber.opacity(0.15))
-
-                // Uzunluk
-                inputRow(label: "📏 Uzunluk (m)", systemIcon: "ruler.fill") {
-                    TextField("Uzunluk (m)", text: $lengthM)
-                        .keyboardType(.decimalPad)
-                        .styledInput()
-                }
-
-                Divider().background(amber.opacity(0.15))
-
-                // İletken tipi
-                inputRow(label: "🧲 İletken", systemIcon: "cable.connector") {
-                    Picker("İletken", selection: $conductorType) {
-                        ForEach(ConductorType.allCases) { t in
-                            Text(t.rawValue).tag(t)
+            // Damar Sayısı
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Kablo Damar (İletken) Sayısı")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.gray)
+                HStack(spacing: 8) {
+                    ForEach([3, 4, 5], id: \.self) { count in
+                        segmentButton(title: "\(count)x", selected: coreCount == count) {
+                            coreCount = count
                         }
                     }
-                    .pickerStyle(.segmented)
-                }
-
-                Divider().background(amber.opacity(0.15))
-
-                // Montaj tipi
-                inputRow(label: "🏗️ Montaj Tipi", systemIcon: "square.stack.3d.up.fill") {
-                    Picker("Montaj", selection: $installationType) {
-                        ForEach(InstallationType.allCases) { t in
-                            Text(t.rawValue).tag(t)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accentColor(amber)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-
-                Divider().background(amber.opacity(0.15))
-
-                // cos φ slider
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 13))
-                            .foregroundStyle(amber)
-                        Text("Güç Faktörü (cos φ)")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.8))
-                        Spacer()
-                        Text(String(format: "%.2f", cosPhi))
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(amber)
-                    }
-                    Slider(value: $cosPhi, in: 0.6...1.0, step: 0.01)
-                        .tint(amber)
-                }
-
-                Divider().background(amber.opacity(0.15))
-
-                // Hedef gerilim düşümü slider
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "arrow.down.right.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.orange)
-                        Text("Hedef Gerilim Düşümü")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.8))
-                        Spacer()
-                        Text(String(format: "%.1f%%", targetDrop))
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(targetDrop <= 3.0 ? Color.green : Color.orange)
-                    }
-                    Slider(value: $targetDrop, in: 1.0...10.0, step: 0.5)
-                        .tint(targetDrop <= 3.0 ? Color.green : Color.orange)
                 }
             }
         }
-        .padding(18)
-        .glassCard(borderColor: amber.opacity(0.3))
+        .padding(16)
+        .background(cardBG)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
     }
 
-    // MARK: - Girdi Satırı
-
-    @ViewBuilder
-    private func inputRow<Content: View>(label: String, systemIcon: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(label)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.75))
-                .frame(minWidth: 130, alignment: .leading)
-            content()
+    // MARK: - 2. Girdiler Kartı (2x2 Grid)
+    private var inputsGridCard: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
+            gridInputField(label: "Aktif Yük Gücü (kW)", placeholder: "Örn: 15", text: $powerKW)
+            gridInputField(label: "Hat Metrajı (Metre)", placeholder: "Örn: 60", text: $lengthM)
+            gridInputField(label: "Güç Faktörü (Cos Phi)", placeholder: "0.90", text: $cosPhi)
+            gridInputField(label: "Demet Devre Sayısı (Cg)", placeholder: "1", text: $groupCount)
         }
+        .padding(16)
+        .background(cardBG)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+    }
+
+    // MARK: - 3. Tesis Bölümü Sınır Limiti
+    private var limitsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Tesis Bölümü Sınır Limiti", systemImage: "slider.horizontal.3")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(amber)
+                .padding(.bottom, 4)
+
+            ForEach(CableLimitType.allCases) { item in
+                let isSelected = selectedLimit == item
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                        selectedLimit = item
+                    }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.rawValue)
+                                .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                .foregroundColor(isSelected ? .white : .gray)
+                            Text(isSelected ? "Hesap limitine göre doğrulanacak" : "Seçmek için dokunun")
+                                .font(.system(size: 10))
+                                .foregroundColor(isSelected ? .white.opacity(0.7) : .gray.opacity(0.5))
+                        }
+                        Spacer()
+                        Text(String(format: "Max %%.1f", item.limit).replacingOccurrences(of: "%%", with: "%"))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(isSelected ? .black : amber)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(isSelected ? amber : amber.opacity(0.12))
+                            .cornerRadius(8)
+                    }
+                    .padding(12)
+                    .background(isSelected ? accentBlue.opacity(0.25) : Color.white.opacity(0.03))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(isSelected ? accentBlue.opacity(0.5) : Color.clear, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(cardBG)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+    }
+
+    // MARK: - 4. İletken Metali
+    private var conductorCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("İletken Metali")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(amber)
+            HStack(spacing: 8) {
+                segmentButton(title: "Bakır (Cu)", selected: isCopper) {
+                    isCopper = true
+                }
+                segmentButton(title: "Alüminyum (Al)", selected: !isCopper) {
+                    isCopper = false
+                }
+            }
+        }
+        .padding(16)
+        .background(cardBG)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+    }
+
+    // MARK: - 5. Piyasa İzolasyon Sınıfı
+    private var insulationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Piyasa İzolasyon Sınıfı")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(amber)
+
+            Picker("İzolasyon Sınıfı", selection: $selectedInsulation) {
+                ForEach(CableInsulationClass.allCases) { type in
+                    Text(type.rawValue).tag(type)
+                }
+            }
+            .pickerStyle(.menu)
+            .accentColor(amber)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+
+            Text(selectedInsulation.displayName)
+                .font(.system(size: 11))
+                .foregroundColor(.gray.opacity(0.7))
+        }
+        .padding(16)
+        .background(cardBG)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+    }
+
+    // MARK: - Manuel Mod Kesit Kartı
+    private var manualSectionCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Manuel Kesit Seçimi (mm²)")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(amber)
+
+            Picker("Kesit Değeri", selection: $selectedManualSection) {
+                ForEach(CableEngine.standardSections, id: \.self) { section in
+                    Text(String(format: "%.1f mm²", section)).tag(section)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 100)
+            .clipped()
+        }
+        .padding(16)
+        .background(cardBG)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
     }
 
     // MARK: - Hesapla Butonu
-
     private var calculateButton: some View {
         Button {
             calculate()
@@ -206,198 +360,202 @@ struct CableCalculatorView: View {
             HStack(spacing: 10) {
                 if isCalculating {
                     ProgressView()
-                        .tint(Color.black)
+                        .tint(.black)
                         .scaleEffect(0.85)
                 } else {
-                    Image(systemName: "equal.circle.fill")
-                        .font(.system(size: 20, weight: .bold))
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 16, weight: .bold))
                 }
                 Text(isCalculating ? "Hesaplanıyor..." : "Hesapla")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
             }
-            .foregroundStyle(Color.black)
+            .foregroundColor(.black)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, 15)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [amber, Color.orange],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .shadow(color: amber.opacity(0.5), radius: 12, x: 0, y: 4)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(LinearGradient(colors: [amber, .orange], startPoint: .leading, endPoint: .trailing))
+                    .shadow(color: amber.opacity(0.4), radius: 8, y: 3)
             )
         }
         .buttonStyle(.plain)
-        .scaleEffect(isCalculating ? 0.97 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: isCalculating)
     }
 
     // MARK: - Sonuç Kartı
-
     @ViewBuilder
     private func resultCard(_ res: CableCalculationResult) -> some View {
         VStack(spacing: 0) {
-            // Başlık
             HStack {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color.green)
-                Text("Hesap Sonuçları")
+                    .foregroundColor(.green)
+                Text("Simülasyon Sonuçları")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white)
+                    .foregroundColor(.white)
                 Spacer()
             }
             .padding(.bottom, 16)
 
-            // Ana değerler — büyük
             HStack(spacing: 0) {
-                bigResultValue(
-                    label: "Hat Akımı",
-                    value: String(format: "%.1f", res.currentA),
-                    unit: "A",
-                    color: amber
-                )
-                Divider()
-                    .background(amber.opacity(0.25))
-                    .frame(height: 60)
-                bigResultValue(
-                    label: "Önerilen Kesit",
-                    value: String(format: "%.0f", res.recommendedSectionMM2),
-                    unit: "mm²",
-                    color: Color.orange
+                bigResultCell(label: "Yük Akımı", value: String(format: "%.1f A", res.currentA), color: amber)
+                Divider().background(amber.opacity(0.2)).frame(height: 50)
+                bigResultCell(
+                    label: isAuto ? "Önerilen Kesit" : "Seçilen Kesit",
+                    value: String(format: "%.1f mm²", res.recommendedSectionMM2),
+                    color: .orange
                 )
             }
             .padding(.bottom, 16)
 
-            Divider().background(amber.opacity(0.15)).padding(.bottom, 16)
+            Divider().background(Color.white.opacity(0.1)).padding(.bottom, 16)
 
-            // Detay değerler
-            VStack(spacing: 10) {
-                resultRow(
+            // Detaylar
+            VStack(spacing: 12) {
+                let dropLimit = selectedLimit.limit
+                let dropOK = res.voltageDrop <= dropLimit
+
+                resultDetailRow(
                     label: "Gerilim Düşümü",
                     value: String(format: "%.2f%%", res.voltageDrop),
-                    isGood: res.isVoltagDropOK,
-                    icon: "arrow.down.right"
+                    statusText: dropOK ? "UYGUN" : "UYGUN DEĞİL",
+                    isGood: dropOK
                 )
-                resultRow(
+                resultDetailRow(
                     label: "Gerilim Düşümü (V)",
-                    value: String(format: "%.1f V", res.voltageDropV),
-                    isGood: res.isVoltagDropOK,
-                    icon: "bolt"
+                    value: String(format: "%.2f V", res.voltageDropV),
+                    statusText: nil,
+                    isGood: dropOK
                 )
-                resultRow(
+                resultDetailRow(
+                    label: "Kapasite Kullanımı",
+                    value: String(format: "%.1f%%", res.loadPercent),
+                    statusText: res.loadPercent < 100.0 ? "GÜVENLİ" : "AŞIRI YÜK",
+                    isGood: res.loadPercent < 100.0
+                )
+                resultDetailRow(
+                    label: "Akım Kapasitesi",
+                    value: String(format: "%.1f A", res.currentCapacityA),
+                    statusText: nil,
+                    isGood: true
+                )
+                resultDetailRow(
                     label: "Önerilen Sigorta",
                     value: "\(res.recommendedFuseA) A",
-                    isGood: true,
-                    icon: "shield.fill"
-                )
-                resultRow(
-                    label: "Kapasite Kullanımı",
-                    value: String(format: "%.0f%%", res.loadPercent),
-                    isGood: res.loadPercent < 80,
-                    icon: "gauge.medium"
-                )
-                resultRow(
-                    label: "Akım Kapasitesi",
-                    value: String(format: "%.0f A", res.currentCapacityA),
-                    isGood: true,
-                    icon: "cable.connector"
+                    statusText: nil,
+                    isGood: true
                 )
             }
 
-            // Uyarı mesajı
             if let warning = res.warningMessage {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color.orange)
+                        .foregroundColor(.orange)
                     Text(warning)
-                        .font(.system(size: 12, design: .rounded))
-                        .foregroundStyle(Color.orange.opacity(0.9))
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange.opacity(0.9))
                 }
                 .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.orange.opacity(0.12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(Color.orange.opacity(0.4), lineWidth: 1)
-                        )
-                )
-                .padding(.top, 12)
-                .offset(x: warningShake ? -4 : 0)
-                .animation(
-                    .easeInOut(duration: 0.08).repeatCount(5, autoreverses: true),
-                    value: warningShake
-                )
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(10)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+                .padding(.top, 16)
+                .shake(trigger: warningShake)
             }
 
-            Divider().background(amber.opacity(0.15)).padding(.vertical, 16)
+            Divider().background(Color.white.opacity(0.1)).padding(.vertical, 16)
 
-            // Teklif'e Ekle butonu
             Button {
                 showAddToQuote = true
-                let impact = UINotificationFeedbackGenerator()
-                impact.notificationOccurred(.success)
             } label: {
-                Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.black)
+                Label("Teklife Ekle", systemImage: "doc.badge.plus")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(amber)
-                    )
+                    .padding(.vertical, 12)
+                    .background(amber)
+                    .cornerRadius(12)
             }
             .buttonStyle(.plain)
         }
         .padding(18)
-        .glassCard(borderColor: Color.green.opacity(0.35))
+        .background(cardBG)
+        .cornerRadius(20)
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(res.voltageDrop <= selectedLimit.limit ? Color.green.opacity(0.35) : Color.red.opacity(0.35), lineWidth: 1))
     }
 
-    // MARK: - Büyük Sonuç Değeri
+    // MARK: - Yardımcı Alt UI Bileşenleri
 
-    private func bigResultValue(label: String, value: String, unit: String, color: Color) -> some View {
+    private func segmentButton(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(selected ? .white : .gray)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(selected ? accentBlue : Color.white.opacity(0.04))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(selected ? accentBlue.opacity(0.8) : Color.clear, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func gridInputField(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.gray)
+                .lineLimit(1)
+            TextField(placeholder, text: text)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.03))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(text.wrappedValue.isEmpty ? Color.white.opacity(0.06) : amber.opacity(0.35), lineWidth: 1)
+                )
+        }
+    }
+
+    private func bigResultCell(label: String, value: String, color: Color) -> some View {
         VStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.gray.opacity(0.65))
-            HStack(alignment: .lastTextBaseline, spacing: 3) {
-                Text(value)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(color)
-                    .shadow(color: color.opacity(0.4), radius: 6)
-                Text(unit)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(color.opacity(0.75))
-            }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.gray)
+            Text(value)
+                .font(.system(size: 24, weight: .black, design: .rounded))
+                .foregroundColor(color)
         }
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Sonuç Satırı
-
-    private func resultRow(label: String, value: String, isGood: Bool, icon: String) -> some View {
+    private func resultDetailRow(label: String, value: String, statusText: String?, isGood: Bool) -> some View {
         HStack {
-            Image(systemName: icon)
-                .font(.system(size: 13))
-                .foregroundStyle(Color.gray.opacity(0.55))
-                .frame(width: 20)
             Text(label)
-                .font(.system(size: 13, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.75))
+                .font(.system(size: 13))
+                .foregroundColor(.gray)
             Spacer()
+            if let status = statusText {
+                Text(status)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(isGood ? .green : .red)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background((isGood ? Color.green : Color.red).opacity(0.12))
+                    .cornerRadius(4)
+                    .padding(.trailing, 4)
+            }
             Text(value)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(isGood ? Color.green : Color.red)
+                .foregroundColor(isGood ? .white : .red)
         }
     }
 
-    // MARK: - Hesaplama Mantığı
-
+    // MARK: - Hesaplama Tetikleyicisi
     private func calculate() {
         guard let power = Double(powerKW.replacingOccurrences(of: ",", with: ".")),
               let length = Double(lengthM.replacingOccurrences(of: ",", with: ".")),
@@ -407,85 +565,68 @@ struct CableCalculatorView: View {
             return
         }
 
+        let cosVal = Double(cosPhi.replacingOccurrences(of: ",", with: ".")) ?? 0.90
+        let groupVal = Int(groupCount) ?? 1
+
         isCalculating = true
         resultVisible = false
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            let voltage = voltageOptions[voltageSelection]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             let input = CableCalculationInput(
                 powerKW: power,
-                voltageV: voltage,
-                phaseCount: phaseCount,
+                voltageV: isThreePhase ? 400.0 : 230.0,
+                phaseCount: isThreePhase ? 3 : 1,
                 lengthM: length,
-                conductorType: conductorType,
-                installationType: installationType,
-                cosPhi: cosPhi,
-                targetVoltageDrop: targetDrop
+                conductorType: isCopper ? .copper : .aluminum,
+                installationType: selectedInsulation == .nym ? .surface : .inConduit,
+                cosPhi: cosVal,
+                targetVoltageDrop: selectedLimit.limit,
+                groupCount: groupVal
             )
-            let res = CableEngine.calculate(input: input)
+
+            let res = CableEngine.calculate(input: input, manualSection: isAuto ? nil : selectedManualSection)
+
             isCalculating = false
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
                 result = res
                 resultVisible = true
             }
+
             if res.warningMessage != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    warningShake = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        warningShake = false
-                    }
+                warningShake = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    warningShake = false
                 }
             }
+
             let impact = UINotificationFeedbackGenerator()
             impact.notificationOccurred(.success)
         }
     }
 }
 
-// MARK: - Görünüm Yardımcıları
-
+// MARK: - Shake Animasyonu Modifier
 extension View {
-    /// Glassmorphism kart stili — amber kenarlık
-    func glassCard(borderColor: Color = Color(red: 1.0, green: 0.75, blue: 0.0).opacity(0.3)) -> some View {
-        self
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color(red: 0.11, green: 0.11, blue: 0.14).opacity(0.6))
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.25), radius: 12, x: 0, y: 4)
+    func shake(trigger: Bool) -> some View {
+        self.modifier(ShakeAnimationModifier(trigger: trigger))
+    }
+}
+
+struct ShakeAnimationModifier: GeometryEffect {
+    var trigger: Bool
+    var animatableData: CGFloat {
+        get { trigger ? 1.0 : 0.0 }
+        set { }
     }
 
-    /// Text field stili — amber kenarlık
-    func styledInput() -> some View {
-        self
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(red: 0.08, green: 0.08, blue: 0.10))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color(red: 1.0, green: 0.75, blue: 0.0).opacity(0.4), lineWidth: 1)
-                    )
-            )
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let translation = trigger ? 5.0 * sin(animatableData * .pi * 5) : 0
+        return ProjectionTransform(CGAffineTransform(translationX: CGFloat(translation), y: 0))
     }
 }
 
 // MARK: - Preview
-
 #Preview {
-    ScrollView {
-        CableCalculatorView()
-    }
-    .preferredColorScheme(.dark)
+    CableCalculatorView()
+        .preferredColorScheme(.dark)
 }

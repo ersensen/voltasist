@@ -78,6 +78,7 @@ struct QuoteBuilderView: View {
         } message: {
             Text("Teklif başarıyla kaydedildi.")
         }
+        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: - Müşteri Bölümü

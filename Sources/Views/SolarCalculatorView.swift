@@ -50,8 +50,7 @@ struct SolarCalculatorView: View {
                 .padding(.top, 12)
             }
         }
-        .navigationTitle("Solar Hesap")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
         .sheet(isPresented: $showCityPicker) {
             CityPickerSheet(selectedCity: $vm.input.city, searchText: $vm.citySearchText)
         }

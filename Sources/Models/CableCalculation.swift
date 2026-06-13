@@ -1,4 +1,4 @@
-﻿// CableCalculation.swift
+// CableCalculation.swift
 // VoltAsist
 //
 // Kablo kesiti ve gerilim düşümü hesaplama modeli.
@@ -91,6 +91,9 @@ struct CableCalculationInput: Codable {
     /// İzin verilen maksimum gerilim düşümü (%) — IEC önerisi %3
     var targetVoltageDrop: Double
 
+    /// Demet devre sayısı (Cg) — varsayılan 1
+    var groupCount: Int
+
     // MARK: Varsayılan Değerler
 
     init(
@@ -101,7 +104,8 @@ struct CableCalculationInput: Codable {
         conductorType: ConductorType = .copper,
         installationType: InstallationType = .inWall,
         cosPhi: Double = 0.90,
-        targetVoltageDrop: Double = 3.0
+        targetVoltageDrop: Double = 3.0,
+        groupCount: Int = 1
     ) {
         self.powerKW = powerKW
         self.voltageV = voltageV
@@ -111,6 +115,7 @@ struct CableCalculationInput: Codable {
         self.installationType = installationType
         self.cosPhi = cosPhi
         self.targetVoltageDrop = targetVoltageDrop
+        self.groupCount = groupCount
     }
 
     /// Güç faktörünün geçerliliğini kontrol et
@@ -121,6 +126,7 @@ struct CableCalculationInput: Codable {
             && lengthM > 0
             && cosPhi > 0 && cosPhi <= 1.0
             && targetVoltageDrop > 0 && targetVoltageDrop <= 10
+            && groupCount > 0
     }
 }
 

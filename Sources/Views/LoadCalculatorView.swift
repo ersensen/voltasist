@@ -51,7 +51,7 @@ struct LoadCalculatorView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                Spacer(minLength: 100)
+                Spacer(minLength: 24)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)

@@ -1,4 +1,4 @@
-﻿// CompensationCalculatorView.swift
+// CompensationCalculatorView.swift
 // VoltAsist
 //
 // 7 sekmeli reaktif güç kompanzasyonu hesaplama ekranı.
@@ -89,7 +89,7 @@ struct CompensationCalculatorView: View {
                     tabContent
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 24)
                 }
             }
         }

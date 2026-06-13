@@ -71,6 +71,7 @@ struct QuotePreviewView: View {
             .sheet(isPresented: $showStatusPicker) {
                 statusPickerSheet
             }
+            .toolbar(.hidden, for: .tabBar)
         }
     }
 

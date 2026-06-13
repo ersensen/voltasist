@@ -1,14 +1,12 @@
 // MainTabView.swift
 // VoltAsist
 //
-// 5 sekmeli premium ana tab bar.
-// Koyu arka plan, amber seçili sekme, spring animasyonlu geçişler.
+// 5 sekmeli ana tab bar. Safe area'ya uyumlu, amber tema, spring animasyon.
 
 import SwiftUI
 
-// MARK: - Ana Tab Seçimi
+// MARK: - AppTab
 
-/// Uygulamanın 5 ana sekmesi
 enum AppTab: Int, CaseIterable {
     case dashboard   = 0
     case calculator  = 1
@@ -16,18 +14,16 @@ enum AppTab: Int, CaseIterable {
     case materials   = 3
     case engineering = 4
 
-    /// Sekme başlığı (Türkçe)
     var title: String {
         switch self {
-        case .dashboard:   return "Dashboard"
+        case .dashboard:   return "Ana Sayfa"
         case .calculator:  return "Hesapla"
         case .solar:       return "Solar"
         case .materials:   return "Malzeme"
-        case .engineering: return "Mühendislik"
+        case .engineering: return "Panel"
         }
     }
 
-    /// SF Symbols ikon adı
     var icon: String {
         switch self {
         case .dashboard:   return "house.fill"
@@ -41,158 +37,150 @@ enum AppTab: Int, CaseIterable {
 
 // MARK: - MainTabView
 
-/// Uygulamanın kök görünümü — premium amber tab bar ile
 struct MainTabView: View {
 
-    // MARK: State
-    /// Seçili sekme indeksi
     @State private var selectedTab: AppTab = .dashboard
-    /// Tab geçiş animasyon tetikleyici
-    @State private var tabBounce: [AppTab: Bool] = [:]
+    @State private var bounce: [AppTab: Bool] = [:]
 
-    // MARK: Environment
     @EnvironmentObject private var persistence: PersistenceService
 
-    // MARK: Tasarım Sabitleri
-    private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
-    private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
+    private let amber  = Color(red: 1.0, green: 0.75, blue: 0.0)
+    private let bg     = Color(red: 0.06, green: 0.06, blue: 0.09)
+    private let tabBG  = Color(red: 0.08, green: 0.08, blue: 0.12)
 
-    // MARK: Body
     var body: some View {
         ZStack(alignment: .bottom) {
-            // İçerik katmanı
+            // İçerik — NavigationStack her sekme için ayrı
             tabContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(bgColor.ignoresSafeArea())
 
-            // Özel premium tab bar
-            premiumTabBar
+            // Floating tab bar
+            tabBar
         }
+        .background(bg.ignoresSafeArea())
         .ignoresSafeArea(.keyboard)
     }
 
-    // MARK: - Tab İçerikleri
+    // MARK: - Tab İçeriği
 
-    /// Her sekmeye karşılık gelen view
     @ViewBuilder
     private var tabContent: some View {
         switch selectedTab {
         case .dashboard:
-            NavigationStack {
-                DashboardView()
-            }
+            NavigationStack { DashboardView() }
+                .transition(.opacity)
         case .calculator:
-            NavigationStack {
-                ElectricCalculatorView()
-            }
+            NavigationStack { ElectricCalculatorView() }
+                .transition(.opacity)
         case .solar:
-            NavigationStack {
-                SolarCalculatorView()
-            }
+            NavigationStack { SolarCalculatorView() }
+                .transition(.opacity)
         case .materials:
-            NavigationStack {
-                MaterialListView()
-            }
+            NavigationStack { MaterialListView() }
+                .transition(.opacity)
         case .engineering:
-            NavigationStack {
-                EngineeringPanelView()
-            }
+            NavigationStack { EngineeringPanelView() }
+                .transition(.opacity)
         }
     }
 
-    // MARK: - Premium Tab Bar
+    // MARK: - Tab Bar
 
-    /// Özel tasarımlı amber tab bar
-    private var premiumTabBar: some View {
+    private var tabBar: some View {
         HStack(spacing: 0) {
             ForEach(AppTab.allCases, id: \.rawValue) { tab in
-                tabBarItem(tab: tab)
+                tabItem(tab)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 12)
-        .padding(.bottom, 20)
+        // İç padding
+        .padding(.top, 10)
+        .padding(.bottom, safeBottomInset + 8)
         .background(
             ZStack {
-                // Glassmorphic arka plan
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                Rectangle()
-                    .fill(Color(red: 0.06, green: 0.06, blue: 0.08).opacity(0.85))
-                // Üst kenar amber çizgisi
-                VStack {
+                // Glass arka plan
+                tabBG.opacity(0.96)
+                // Üst amber çizgisi
+                VStack(spacing: 0) {
                     Rectangle()
                         .fill(
                             LinearGradient(
-                                colors: [amber.opacity(0.6), amber.opacity(0.0)],
+                                colors: [amber.opacity(0.5), .clear],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
-                        .frame(height: 1)
+                        .frame(height: 0.8)
                     Spacer()
                 }
             }
+            .background(.ultraThinMaterial)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(amber.opacity(0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(amber.opacity(0.2), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.4), radius: 20, x: 0, y: -4)
-        .shadow(color: amber.opacity(0.08), radius: 12, x: 0, y: -2)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .shadow(color: .black.opacity(0.5), radius: 24, x: 0, y: -6)
+        .shadow(color: amber.opacity(0.06), radius: 16, x: 0, y: -2)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
     }
 
-    // MARK: - Tab Bar Kalemi
+    // MARK: - Tek Tab Kalemi
 
-    /// Tek bir tab bar öğesi
-    @ViewBuilder
-    private func tabBarItem(tab: AppTab) -> some View {
+    private func tabItem(_ tab: AppTab) -> some View {
         let isSelected = selectedTab == tab
 
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        return Button {
+            guard selectedTab != tab else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
                 selectedTab = tab
-                tabBounce[tab] = true
+                bounce[tab] = true
             }
-            // Bounce sıfırla
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                tabBounce[tab] = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                bounce[tab] = false
             }
-            // Haptic feedback
-            let impact = UIImpactFeedbackGenerator(style: .light)
-            impact.impactOccurred()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
                 ZStack {
-                    // Seçili arka plan pill
                     if isSelected {
-                        Capsule()
-                            .fill(amber.opacity(0.18))
-                            .frame(width: 48, height: 32)
-                            .shadow(color: amber.opacity(0.4), radius: 8, x: 0, y: 0)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(amber.opacity(0.15))
+                            .frame(width: 44, height: 30)
+                            .shadow(color: amber.opacity(0.35), radius: 6)
                     }
-
                     Image(systemName: tab.icon)
-                        .font(.system(size: isSelected ? 20 : 18, weight: .semibold))
-                        .foregroundStyle(isSelected ? amber : Color.gray.opacity(0.6))
-                        .scaleEffect(tabBounce[tab] == true ? 1.25 : 1.0)
-                        .animation(.spring(response: 0.25, dampingFraction: 0.6), value: tabBounce[tab])
+                        .font(.system(size: 19, weight: isSelected ? .bold : .regular))
+                        .foregroundStyle(isSelected ? amber : Color.gray.opacity(0.5))
+                        .scaleEffect(bounce[tab] == true ? 1.22 : 1.0)
+                        .animation(
+                            .spring(response: 0.22, dampingFraction: 0.55),
+                            value: bounce[tab]
+                        )
                 }
-                .frame(width: 48, height: 32)
+                .frame(height: 30)
 
                 Text(tab.title)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .regular, design: .rounded))
-                    .foregroundStyle(isSelected ? amber : Color.gray.opacity(0.5))
+                    .font(.system(size: 9.5, weight: isSelected ? .bold : .regular, design: .rounded))
+                    .foregroundStyle(isSelected ? amber : Color.gray.opacity(0.45))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Safe Area
+
+    private var safeBottomInset: CGFloat {
+        (UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.bottom) ?? 0
     }
 }
 

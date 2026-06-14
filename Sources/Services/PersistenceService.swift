@@ -55,6 +55,13 @@ final class PersistenceService: ObservableObject {
         quotes     = load(key: Keys.quotes,     type: [Quote].self)     ?? []
         materials  = load(key: Keys.materials,  type: [Material].self)  ?? []
         settings   = load(key: Keys.settings,   type: AppSettings.self) ?? .defaultSettings
+        if materials.isEmpty { seedDefaultMaterials() }
+    }
+
+    /// Malzeme listesi boşsa hazır örnek kataloğu yükler (ilk kurulum).
+    func seedDefaultMaterials() {
+        materials = DefaultMaterialCatalog.all
+        persist(materials, key: Keys.materials)
     }
 
     // MARK: - Müşteri İşlemleri

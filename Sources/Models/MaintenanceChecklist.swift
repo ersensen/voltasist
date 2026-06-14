@@ -60,6 +60,7 @@ struct MaintenanceVisit: Identifiable, Codable {
     var technician: String    = ""
     var overallNotes: String  = ""
     var items: [ChecklistItem]
+    var photoIDs: [UUID]      = []
 
     var completedCount: Int { items.filter { $0.status != .unchecked }.count }
     var failureCount: Int   { items.filter { $0.status == .failure }.count }

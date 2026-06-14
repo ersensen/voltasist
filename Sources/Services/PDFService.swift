@@ -823,6 +823,41 @@ struct PDFService {
                             .draw(in: CGRect(x: Layout.marginH + 16, y: y, width: pageRect.width - 2*Layout.marginH - 20, height: 12))
                         y += 12
                     }
+
+                    // Photo thumbnails
+                    if !visit.photoIDs.isEmpty {
+                        y += 4
+                        if y + 16 > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                        NSAttributedString(string: "Fotoğraflar (\(visit.photoIDs.count) adet):",
+                                           attributes: [.font: font(size: 7.5, weight: .semibold), .foregroundColor: Palette.dark])
+                            .draw(at: CGPoint(x: Layout.marginH + 16, y: y))
+                        y += 14
+
+                        let thumbW: CGFloat = 140
+                        let thumbH: CGFloat = 95
+                        let gap: CGFloat = 8
+                        let perRow = 3
+                        let rows = stride(from: 0, to: visit.photoIDs.count, by: perRow).map {
+                            Array(visit.photoIDs[$0..<min($0 + perRow, visit.photoIDs.count)])
+                        }
+                        for rowIDs in rows {
+                            if y + thumbH + gap > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                            for (col, photoID) in rowIDs.enumerated() {
+                                let xPos = Layout.marginH + 16 + CGFloat(col) * (thumbW + gap)
+                                let drawRect = CGRect(x: xPos, y: y, width: thumbW, height: thumbH)
+                                if let thumb = PhotoStorageService.thumbnail(photoID: photoID, entityID: visit.id,
+                                                                             size: CGSize(width: Int(thumbW), height: Int(thumbH))) {
+                                    thumb.draw(in: drawRect)
+                                }
+                                ctx.cgContext.setStrokeColor(Palette.divider.cgColor)
+                                ctx.cgContext.setLineWidth(0.5)
+                                ctx.cgContext.stroke(drawRect)
+                            }
+                            y += thumbH + gap
+                        }
+                        y += 4
+                    }
+
                     y += 8
                 }
                 y += 10

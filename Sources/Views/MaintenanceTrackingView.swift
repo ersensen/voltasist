@@ -770,6 +770,10 @@ struct MaintenanceRecordDetailView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
                 HStack(spacing: 6) {
+                    if visit.photoIDs.count > 0 {
+                        Label("\(visit.photoIDs.count)", systemImage: "camera.fill")
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.teal)
+                    }
                     if visit.failureCount > 0 {
                         Label("\(visit.failureCount)", systemImage: "xmark.circle.fill")
                             .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.red)
@@ -838,6 +842,10 @@ struct MaintenanceRecordDetailView: View {
                     Text("-\(reading.estimatedPenalty.currencyFormatted)")
                         .font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
                 }
+                if reading.photoIDs.count > 0 {
+                    Label("\(reading.photoIDs.count)", systemImage: "camera.fill")
+                        .font(.system(size: 10, design: .rounded)).foregroundStyle(.teal)
+                }
             }
         }
         .padding(12)
@@ -855,6 +863,9 @@ struct MaintenanceVisitFormView: View {
     @State private var technicianText: String = ""
     @State private var overallNotes: String = ""
     @State private var expandedItem: UUID? = nil
+    @State private var selectedImages: [UIImage] = []
+    @State private var showPhotoPicker = false
+    @State private var showCamera = false
 
     private let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
 
@@ -899,9 +910,18 @@ struct MaintenanceVisitFormView: View {
                         }
                         .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
 
+                        visitPhotoSection
+
                         Button {
                             visit.technician = technicianText
                             visit.overallNotes = overallNotes
+                            var photoIDs: [UUID] = []
+                            for img in selectedImages {
+                                if let pid = PhotoStorageService.save(image: img, entityID: visit.id) {
+                                    photoIDs.append(pid)
+                                }
+                            }
+                            visit.photoIDs = photoIDs
                             onSave(visit)
                             dismiss()
                         } label: {
@@ -922,7 +942,62 @@ struct MaintenanceVisitFormView: View {
                     Button("İptal") { dismiss() }.foregroundStyle(.gray)
                 }
             }
+            .sheet(isPresented: $showPhotoPicker) {
+                PhotoPickerView { images in selectedImages.append(contentsOf: images) }
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraPickerView { image in selectedImages.append(image) }
+            }
         }
+    }
+
+    private var visitPhotoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "photo.on.rectangle.angled").foregroundStyle(Color.teal)
+                Text("Fotoğraflar")
+                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                Spacer()
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button { showCamera = true } label: {
+                        Image(systemName: "camera.fill").font(.system(size: 17)).foregroundStyle(Color.teal)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 8)
+                }
+                Button { showPhotoPicker = true } label: {
+                    Image(systemName: "photo.fill.on.rectangle.fill").font(.system(size: 17)).foregroundStyle(Color.teal)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
+            }
+            if selectedImages.isEmpty {
+                Text("Bakım fotoğrafı eklemek için galeri veya kamera ikonuna basın.")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(selectedImages.enumerated()), id: \.0) { idx, img in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: img)
+                                    .resizable().scaledToFill()
+                                    .frame(width: 80, height: 80).clipped()
+                                    .cornerRadius(8)
+                                Button { selectedImages.remove(at: idx) } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.white)
+                                        .background(Circle().fill(Color.black.opacity(0.4)))
+                                }
+                                .buttonStyle(.plain).offset(x: 4, y: -4)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
     }
 
     private func visitItemRow(item: Binding<ChecklistItem>) -> some View {
@@ -963,12 +1038,16 @@ struct MaintenanceVisitDetailView: View {
     let visit: MaintenanceVisit
     private let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
 
+    @State private var photos: [(id: UUID, image: UIImage)] = []
+    @State private var fullScreenImage: UIImage? = nil
+
     var body: some View {
         ZStack {
             Color(red: 0.07, green: 0.07, blue: 0.09).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 14) {
                     summaryBanner
+                    if !photos.isEmpty { photoStrip }
                     itemsList
                     if !visit.overallNotes.isEmpty {
                         notesCard
@@ -979,6 +1058,45 @@ struct MaintenanceVisitDetailView: View {
         }
         .navigationTitle(visit.date.formatted(.dateTime.day().month().year()))
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            photos = PhotoStorageService.loadAll(photoIDs: visit.photoIDs, entityID: visit.id)
+        }
+        .sheet(isPresented: .init(
+            get: { fullScreenImage != nil },
+            set: { if !$0 { fullScreenImage = nil } }
+        )) {
+            if let img = fullScreenImage { PhotoFullScreenView(image: img) }
+        }
+    }
+
+    private var photoStrip: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "camera.fill").foregroundStyle(Color.teal)
+                Text("Ziyaret Fotoğrafları (\(photos.count))")
+                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(photos, id: \.id) { entry in
+                        Button { fullScreenImage = entry.image } label: {
+                            Image(uiImage: entry.image)
+                                .resizable().scaledToFill()
+                                .frame(width: 90, height: 90).clipped()
+                                .cornerRadius(10)
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.35), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.teal.opacity(0.06))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.teal.opacity(0.25), lineWidth: 1))
+        )
     }
 
     private var summaryBanner: some View {
@@ -1170,6 +1288,7 @@ struct MaintenanceReadingFormView: View {
     let defaultTariff: Double
     let onSave: (MaintenanceReading) -> Void
 
+    @State private var readingID: UUID        = UUID()
     @State private var periodLabel: String   = ""
     @State private var activeKWhStr: String  = ""
     @State private var inductiveStr: String  = ""
@@ -1178,6 +1297,9 @@ struct MaintenanceReadingFormView: View {
     @State private var tariffStr: String     = "0.40"
     @State private var notes: String         = ""
     @State private var date: Date            = Date()
+    @State private var selectedImages: [UIImage] = []
+    @State private var showPhotoPicker = false
+    @State private var showCamera = false
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -1244,6 +1366,10 @@ struct MaintenanceReadingFormView: View {
                             .font(.system(size: 13, design: .rounded)).foregroundStyle(.white)
                             .lineLimit(3...6)
                     }
+
+                    formSection("Sayaç Fotoğrafı") {
+                        readingPhotoContent
+                    }
                 }
                 .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 40)
             }
@@ -1258,6 +1384,7 @@ struct MaintenanceReadingFormView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {
                         var r = MaintenanceReading()
+                        r.id              = readingID
                         r.date            = date
                         r.periodLabel     = periodLabel
                         r.activeKWh       = activeKWh
@@ -1266,6 +1393,13 @@ struct MaintenanceReadingFormView: View {
                         r.invoiceAmount   = Double(invoiceStr) ?? 0
                         r.tariff          = Double(tariffStr) ?? 0.40
                         r.notes           = notes
+                        var photoIDs: [UUID] = []
+                        for img in selectedImages {
+                            if let pid = PhotoStorageService.save(image: img, entityID: readingID) {
+                                photoIDs.append(pid)
+                            }
+                        }
+                        r.photoIDs = photoIDs
                         onSave(r)
                         dismiss()
                     }
@@ -1273,8 +1407,68 @@ struct MaintenanceReadingFormView: View {
                     .disabled(activeKWh <= 0)
                 }
             }
+            .sheet(isPresented: $showPhotoPicker) {
+                PhotoPickerView { images in selectedImages.append(contentsOf: images) }
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraPickerView { image in selectedImages.append(image) }
+            }
         }
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var readingPhotoContent: some View {
+        if selectedImages.isEmpty {
+            HStack(spacing: 16) {
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button { showCamera = true } label: {
+                        Label("Kamera", systemImage: "camera.fill")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.teal)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { showPhotoPicker = true } label: {
+                    Label("Galeriden Seç", systemImage: "photo.fill")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.teal)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 4)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(selectedImages.enumerated()), id: \.0) { idx, img in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: img)
+                                .resizable().scaledToFill()
+                                .frame(width: 76, height: 76).clipped()
+                                .cornerRadius(8)
+                            Button { selectedImages.remove(at: idx) } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.4)))
+                            }
+                            .buttonStyle(.plain).offset(x: 4, y: -4)
+                        }
+                    }
+                    Button { showPhotoPicker = true } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(Color.teal)
+                            Text("Ekle").font(.system(size: 11)).foregroundStyle(Color.teal)
+                        }
+                        .frame(width: 76, height: 76)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.teal.opacity(0.08))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.teal.opacity(0.3), lineWidth: 1))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     private var liveStatusCard: some View {

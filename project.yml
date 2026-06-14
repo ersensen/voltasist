@@ -19,10 +19,12 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_NSCameraUsageDescription: "Bakım fotoğrafı çekmek için kamera erişimi gerekiyor."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Bakım fotoğrafı eklemek için galeri erişimi gerekiyor."
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "20"
+        CURRENT_PROJECT_VERSION: "21"
         SWIFT_VERSION: "5.9"
         OTHER_SWIFT_FLAGS: ""
       configs:

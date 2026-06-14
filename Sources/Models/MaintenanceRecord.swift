@@ -63,6 +63,7 @@ struct MaintenanceReading: Identifiable, Codable {
     var invoiceAmount: Double  = 0
     var tariff: Double         = 0.40
     var notes: String          = ""
+    var photoIDs: [UUID]       = []
 
     // cos φ = kWh / √(kWh² + (endüktif − kapasitif)²)
     var cosPhi: Double {

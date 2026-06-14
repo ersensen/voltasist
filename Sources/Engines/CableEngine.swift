@@ -44,6 +44,26 @@ struct CableEngine {
         240.0: 365.0
     ]
 
+    /// 3 aktif iletken (üç fazlı) için akım taşıma kapasitesi (A)
+    /// B2 montaj yöntemi, NYM çok damarlı, PVC, bakır, 30°C — IEC 60364-5-52 Tablo A.52-4
+    static let currentCapacityTable3P: [Double: Double] = [
+        1.5:   13.0,
+        2.5:   17.5,
+        4.0:   23.0,
+        6.0:   29.5,
+        10.0:  40.0,
+        16.0:  54.0,
+        25.0:  73.0,
+        35.0:  89.0,
+        50.0:  108.0,
+        70.0:  136.0,
+        95.0:  164.0,
+        120.0: 188.0,
+        150.0: 216.0,
+        185.0: 245.0,
+        240.0: 286.0
+    ]
+
     // MARK: Ana Hesaplama
 
     /// Kablo kesiti ve gerilim düşümü hesapla
@@ -69,8 +89,14 @@ struct CableEngine {
         let deratingFactor = input.installationType.derating * CableEngine.groupingFactor(cableCount: input.groupCount)
         let requiredCapacity = current / deratingFactor
 
+        // Faz sayısına göre IEC 60364-5-52 Tablo A.52-4 sütunu seç
+        // Tek faz → 2 aktif iletken; üç faz → 3 aktif iletken (%13-15 daha düşük kapasite)
+        let capacityTable = input.phaseCount == 1
+            ? CableEngine.currentCapacityTable
+            : CableEngine.currentCapacityTable3P
+
         // Akım kapasitesinden minimum kesit
-        let sectionByCapacity = minimumSectionForCurrent(requiredCapacity)
+        let sectionByCapacity = minimumSectionForCurrent(requiredCapacity, table: capacityTable)
 
         // --- 3. Gerilim Düşümü Kesiti ---
         // Gerilim düşümü formülü:
@@ -111,13 +137,12 @@ struct CableEngine {
         let isVoltageDropOK = actualVoltageDropPercent <= input.targetVoltageDrop
 
         // --- 7. Sigorta Seçimi ---
-        // Sigorta akımı ≥ yük akımı × 1.25 (IEC 60364 aşırı yük koruması)
-        // Sigorta akımı ≤ kablo kapasitesi (ısıl koruma)
-        let minFuseCurrent = current * 1.25
-        let selectedFuse = nextStandardFuse(for: minFuseCurrent)
+        // IEC 60364-4-43 md.433.1: Ib ≤ In ≤ Iz — sigorta yük akımından küçük olmaz
+        // (1.25 çarpanı standartta yok; In > Iz ise aşırı yük koruması sağlanamaz)
+        let selectedFuse = nextStandardFuse(for: current)
 
         // --- 8. Seçilen Kesitin Akım Kapasitesi ---
-        let cableCapacity = (currentCapacityTable[recommendedSection] ?? 0.0) * deratingFactor
+        let cableCapacity = (capacityTable[recommendedSection] ?? 0.0) * deratingFactor
 
         // --- 9. Uyarı Mesajı ---
         var warning: String?
@@ -156,9 +181,9 @@ struct CableEngine {
     /// Verilen akım kapasitesi için minimum standart kesiti döndürür
     /// - Parameter requiredCurrentA: Gerekli akım taşıma kapasitesi (A)
     /// - Returns: Minimum standart kesit (mm²)
-    private static func minimumSectionForCurrent(_ requiredCurrentA: Double) -> Double {
+    private static func minimumSectionForCurrent(_ requiredCurrentA: Double, table: [Double: Double]) -> Double {
         for section in standardSections {
-            if let capacity = currentCapacityTable[section], capacity >= requiredCurrentA {
+            if let capacity = table[section], capacity >= requiredCurrentA {
                 return section
             }
         }
@@ -192,17 +217,22 @@ struct CableEngine {
 
     // MARK: İletkenlik Düzeltmesi (Sıcaklık)
 
-    /// Çalışma sıcaklığına göre iletkenlik düzeltme katsayısı
-    /// IEC 60364 — XLPE: 90°C, PVC: 70°C
+    /// Ortam sıcaklığına göre akım kapasitesi düzeltme katsayısı — IEC 60364-5-52 Tablo B.52.14
     /// - Parameters:
-    ///   - ambientTemp: Ortam sıcaklığı (°C)
-    ///   - insulationType: "PVC" veya "XLPE"
-    /// - Returns: Düzeltme katsayısı (0.7–1.0)
-    static func temperatureCorrectionFactor(ambientTemp: Double, insulationType: String = "PVC") -> Double {
-        let referenceTemp: Double = 30.0
+    ///   - ambientTemp:    Ortam sıcaklığı (°C)
+    ///   - insulationType: İzolasyon tipi — "PVC" (maks 70°C) veya "XLPE" (maks 90°C)
+    ///   - underground:    Toprak döşemesi ise true — referans sıcaklık 20°C; hava montajı: 30°C
+    /// - Returns: Düzeltme katsayısı (0.5–1.0)
+    static func temperatureCorrectionFactor(
+        ambientTemp: Double,
+        insulationType: String = "PVC",
+        underground: Bool = false
+    ) -> Double {
+        // IEC 60364-5-52 Tablo B.52.14: hava döşemesi 30°C, toprak döşemesi 20°C referans
+        let referenceTemp: Double = underground ? 20.0 : 30.0
         let maxTemp: Double = insulationType == "XLPE" ? 90.0 : 70.0
 
-        // IEC 60364-5-52 Tablo B.52.14 formülü
+        // Ct = √((Tp − Ta) / (Tp − T0))
         let factor = sqrt((maxTemp - ambientTemp) / (maxTemp - referenceTemp))
         return max(0.5, min(factor, 1.0))
     }
@@ -218,8 +248,8 @@ struct CableEngine {
         case 1:       return 1.00
         case 2:       return 0.80
         case 3:       return 0.70
-        case 4...5:   return 0.65
-        case 6...9:   return 0.60
+        case 4:       return 0.65
+        case 5...9:   return 0.60  // IEC 60364-5-52 Tablo B.52.17: 5 devre için 0.60 (önce 0.65 idi, hatalıydı)
         case 10...14: return 0.55
         case 15...19: return 0.50
         default:      return 0.45

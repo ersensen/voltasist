@@ -75,9 +75,11 @@ struct LightingEngine {
         let energyClass = energyClassification(for: powerDensity, usageType: input.usageType)
 
         // --- 10. LED vs Floresan Tasarrufu ---
-        // Floresan eşdeğer watt hesabı (aynı lümen çıkışı için)
-        let floresanWatt = requiredLumens / fluorescentEfficacy
-        let ledSaving = ((floresanWatt - totalWatt) / floresanWatt) * 100.0
+        // Adil karşılaştırma: her iki teknoloji için aynı fixtureCount (yukarı yuvarlanmış) kullanılır
+        // Florasan armatür başına güç = aynı lümen çıkışı / florasan verimi
+        let fluorescentWattPerFixture = fixtureLumens / fluorescentEfficacy
+        let floresanTotalWatt = Double(fixtureCount) * fluorescentWattPerFixture
+        let ledSaving = floresanTotalWatt > 0 ? ((floresanTotalWatt - totalWatt) / floresanTotalWatt) * 100.0 : 0.0
         let ledVsFloresanSaving = max(0, ledSaving)
 
         // --- 11. Yıllık Enerji Maliyeti ---
@@ -104,24 +106,43 @@ struct LightingEngine {
 
     // MARK: Kullanım Katsayısı (CU)
 
-    /// Mekan indeksine (k) göre Kullanım Katsayısı
-    /// Tavan: beyaz (0.7), Duvar: açık (0.5), Zemin: orta (0.2) kabul
-    /// IEC/CIBSE lümen metodu tablolarından basitleştirilmiş
-    /// - Parameter roomIndex: k = (L×W) / (h×(L+W))
-    /// - Returns: CU değeri (0.40–0.75)
-    static func utilisationCoefficient(for roomIndex: Double) -> Double {
+    /// Mekan indeksine (k) ve yüzey yansıtma oranlarına göre Kullanım Katsayısı (CU)
+    /// Temel tablo: CIE/CIBSE lümen metodu, referans ρc=0.70, ρw=0.50, ρf=0.20
+    /// Gerçek yansıtma oranları farklıysa ağırlıklı düzeltme faktörü uygulanır.
+    /// - Parameters:
+    ///   - roomIndex:          k = (L×W) / (h_m×(L+W))
+    ///   - ceilingReflectance: Tavan yansıtma oranı ρc — 0.80 beyaz, 0.70 krem, 0.50 gri, 0.30 koyu
+    ///   - wallReflectance:    Duvar yansıtma oranı ρw — 0.70 açık, 0.50 orta, 0.30 koyu
+    ///   - floorReflectance:   Zemin yansıtma oranı ρf — 0.30 açık, 0.20 beton, 0.10 koyu
+    /// - Returns: CU değeri (0.25–0.90)
+    static func utilisationCoefficient(
+        for roomIndex: Double,
+        ceilingReflectance: Double = 0.70,
+        wallReflectance: Double    = 0.50,
+        floorReflectance: Double   = 0.20
+    ) -> Double {
+        // Temel CU — referans yansıtma oranları (ρc=0.70, ρw=0.50, ρf=0.20)
+        let baseCU: Double
         switch roomIndex {
-        case ..<0.5:   return 0.40
-        case 0.5..<0.7: return 0.46
-        case 0.7..<1.0: return 0.52
-        case 1.0..<1.25: return 0.57
-        case 1.25..<1.5: return 0.61
-        case 1.5..<2.0: return 0.65
-        case 2.0..<2.5: return 0.68
-        case 2.5..<3.0: return 0.71
-        case 3.0..<4.0: return 0.73
-        default:         return 0.75
+        case ..<0.5:     baseCU = 0.40
+        case 0.5..<0.7:  baseCU = 0.46
+        case 0.7..<1.0:  baseCU = 0.52
+        case 1.0..<1.25: baseCU = 0.57
+        case 1.25..<1.5: baseCU = 0.61
+        case 1.5..<2.0:  baseCU = 0.65
+        case 2.0..<2.5:  baseCU = 0.68
+        case 2.5..<3.0:  baseCU = 0.71
+        case 3.0..<4.0:  baseCU = 0.73
+        default:          baseCU = 0.75
         }
+
+        // Ağırlıklı yansıtma düzeltmesi — IEC/CIBSE basitleştirilmiş model
+        // Ağırlıklar: tavan %50 (en belirleyici), duvar %30, zemin %20
+        let actual    = 0.50 * ceilingReflectance + 0.30 * wallReflectance + 0.20 * floorReflectance
+        let reference = 0.50 * 0.70               + 0.30 * 0.50            + 0.20 * 0.20  // = 0.54
+        let correction = 1.0 + 0.5 * (actual - reference) / reference
+
+        return max(0.25, min(0.90, baseCU * correction))
     }
 
     // MARK: Enerji Sınıflandırması

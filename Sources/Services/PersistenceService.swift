@@ -55,7 +55,7 @@ final class PersistenceService: ObservableObject {
         quotes     = load(key: Keys.quotes,     type: [Quote].self)     ?? []
         materials  = load(key: Keys.materials,  type: [Material].self)  ?? []
         settings   = load(key: Keys.settings,   type: AppSettings.self) ?? .defaultSettings
-        if materials.isEmpty { seedDefaultMaterials() }
+        if materials.count < DefaultMaterialCatalog.all.count { seedDefaultMaterials() }
     }
 
     /// Malzeme listesi boşsa hazır örnek kataloğu yükler (ilk kurulum).

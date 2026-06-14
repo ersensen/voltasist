@@ -114,7 +114,10 @@ struct CompensationEngine {
     ///   - voltageV: Sistem gerilimi (V)
     /// - Returns: Kontaktör akımı (A)
     static func calculateContactorCurrent(stepKVAr: Double, voltageV: Double) -> Double {
-        return (stepKVAr * 1000.0) / (sqrt(3.0) * voltageV)
+        let nominalCurrent = (stepKVAr * 1000.0) / (sqrt(3.0) * voltageV)
+        // IEC 60831-1 / IEC 60947-4-1: kondansatör anahtarlamasında inrush akımı nedeniyle
+        // kontaktör minimum 1.43× nominal kondansatör akımı kapasitesinde seçilmelidir
+        return nominalCurrent * 1.43
     }
 
     /// AKP pano boyutu önerisi (kademe sayısına göre)
@@ -196,9 +199,10 @@ struct CompensationEngine {
         // Kazanılan kapasite
         let capacityGain = max(0.0, beforeKVA - afterKVA)
 
-        // Bakır kayıp azalması: P_cu ∝ I² ∝ S²
-        // Azalma% = (1 - (S_sonra/S_önce)²) × 100
-        let lossReduction = (1.0 - pow(afterKVA / max(1.0, beforeKVA), 2.0)) * 100.0
+        // Bakır kayıp azalması: ΔP_cu = P_cu_nom × [(S_önce/S_nom)² − (S_sonra/S_nom)²]
+        // Sonuç, nominal (anma) bakır kayıplarına oransal %; kısmi yük durumunda doğru değer verir
+        let lossReduction = (pow(beforeKVA / max(1.0, transformerKVA), 2.0)
+                           - pow(afterKVA  / max(1.0, transformerKVA), 2.0)) * 100.0
 
         return (loadBefore, loadAfter, capacityGain, lossReduction)
     }
@@ -303,9 +307,11 @@ struct CompensationEngine {
         let yearlyPenalty     = monthlyPenalty * 12.0
 
         // 2. Gerekli kondansatör gücü
+        // cos φ, S ve P'den türetilir — ceza hesabındaki Q ile aynı kaynak (tutarsızlık giderildi)
+        let derivedCosPhi = min(0.9999, max(0.001, input.activePowerKW / max(0.001, input.apparentPowerKVA)))
         let requiredQc = calculateRequiredQc(
             activePowerKW: input.activePowerKW,
-            currentCosPhi: input.measuredCosPhi,
+            currentCosPhi: derivedCosPhi,
             targetCosPhi: input.targetCosPhi
         )
 
@@ -393,7 +399,7 @@ struct CompensationEngine {
 
         return CompensationResult(
             reactivePowerKVAr: reactivePowerKVAr,
-            currentCosPhi: input.measuredCosPhi,
+            currentCosPhi: derivedCosPhi,
             penaltyThresholdKVAr: penaltyThreshold,
             monthlyPenaltyTL: monthlyPenalty,
             yearlyPenaltyTL: yearlyPenalty,

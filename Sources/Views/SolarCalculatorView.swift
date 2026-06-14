@@ -19,6 +19,9 @@ struct SolarCalculatorView: View {
     @State private var addedToQuote  = false
     @State private var showQuoteAlert = false
 
+    // MARK: State — Panel Gücü (Wp) — malzeme listesi için kullanıcı tarafından değiştirilebilir
+    @State private var panelWp          : Double = 400      // varsayılan 400Wp
+
     // MARK: State — Malzeme Birim Fiyatları (₺, KDV dahil, 2026 piyasası)
     @State private var pricePanel       : Double = 2_200    // 400Wp monokristalin panel
     @State private var priceInverter    : Double = 22_000   // inverter (tam ünite, 5kW ref.)
@@ -522,11 +525,13 @@ struct SolarCalculatorView: View {
     // MARK: - Malzeme Listesi
 
     private func solarMaterialListSection(result: SolarCalculationResult) -> some View {
-        let panelQty  = Double(result.panelCount)
+        let effectiveWp    = max(1.0, panelWp)
+        let derivedCount   = max(1, Int(ceil(result.requiredCapacityKWp * 1000.0 / effectiveWp)))
+        let panelQty  = Double(derivedCount)
         let batQty    = Double(result.batteryCount)
-        let dcCableM  = Double(result.panelCount * 10)   // panel başına ~10m DC kablo
-        let hookQty   = Double(result.panelCount * 4)    // panel başına 4 kanca
-        let fuseQty   = Double(max(1, result.panelCount / 4))
+        let dcCableM  = panelQty * 10                    // panel başına ~10m DC kablo
+        let hookQty   = panelQty * 4                     // panel başına 4 kanca
+        let fuseQty   = Double(max(1, derivedCount / 4))
         let jboxQty   = Double(max(1, Int(ceil(panelQty / 8))))
 
         let grandTotal = panelQty  * pricePanel
@@ -542,16 +547,39 @@ struct SolarCalculatorView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             // Başlık
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "list.bullet.clipboard.fill").foregroundColor(sunGold)
                 Text("Malzeme Listesi")
                     .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.white)
                 Spacer()
+                // Kullanıcı tarafından değiştirilebilir panel gücü
+                HStack(spacing: 3) {
+                    TextField("400", value: $panelWp, format: .number.precision(.fractionLength(0)))
+                        .keyboardType(.numberPad)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(sunGold)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 52)
+                        .padding(.horizontal, 6).padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(7)
+                    Text("Wp")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(.gray.opacity(0.55))
+                }
                 Label("KDV Dahil", systemImage: "checkmark.seal.fill")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(sunGold.opacity(0.75))
             }
-            .padding(.bottom, 12)
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 9))
+                    .foregroundColor(.gray.opacity(0.4))
+                Text("\(derivedCount) panel · \(String(format: "%.2f", result.requiredCapacityKWp)) kWp ihtiyaç")
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundColor(.gray.opacity(0.45))
+            }
+            .padding(.bottom, 10)
 
             // Kolon başlıkları
             HStack {
@@ -571,7 +599,7 @@ struct SolarCalculatorView: View {
 
             // Malzeme satırları
             materialPriceRow(
-                name: "Güneş Paneli (400Wp Monokristalin)",
+                name: "Güneş Paneli (\(Int(panelWp))Wp Monokristalin)",
                 qty: panelQty, unit: "adet", price: $pricePanel
             )
             materialPriceRow(

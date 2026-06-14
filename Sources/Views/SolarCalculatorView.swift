@@ -17,6 +17,8 @@ struct SolarCalculatorView: View {
     @EnvironmentObject private var persistence: PersistenceService
     @State private var showCityPicker = false
     @State private var showQuoteAlert = false
+    @State private var pendingQuoteItems: [QuoteItem] = []
+    @State private var showCustomerPicker = false
 
     // MARK: State — Panel Gücü (Wp) — malzeme listesi için kullanıcı tarafından değiştirilebilir
     @State private var panelWp          : Double = 400      // varsayılan 400Wp
@@ -79,7 +81,15 @@ struct SolarCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAlert) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
+            Text("Müşteri teklifine eklendi. Teklif sekmesinden görüntüleyebilirsiniz.")
+        }
+        .sheet(isPresented: $showCustomerPicker) {
+            CustomerPickerView { customer in
+                persistence.addItemsToQuote(pendingQuoteItems, forCustomer: customer)
+                showCustomerPicker = false
+                showQuoteAlert = true
+            }
+            .environmentObject(persistence)
         }
     }
 
@@ -535,18 +545,9 @@ struct SolarCalculatorView: View {
             // Teklif'e ekle
             Button(action: {
                 if let res = vm.result {
-                    let items = QuoteEngine.itemsFromSolar(res, input: vm.input)
-                    var quote = QuoteEngine.createNewQuote(
-                        sequence: persistence.settings.nextQuoteNumber,
-                        settings: persistence.settings
-                    )
-                    quote.items = items
-                    persistence.saveQuote(quote)
-                    var updatedSettings = persistence.settings
-                    updatedSettings.nextQuoteNumber += 1
-                    persistence.saveSettings(updatedSettings)
+                    pendingQuoteItems = QuoteEngine.itemsFromSolar(res, input: vm.input)
+                    showCustomerPicker = true
                 }
-                showQuoteAlert = true
             }) {
                 Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                     .font(.system(size: 14, weight: .bold, design: .rounded))

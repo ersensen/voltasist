@@ -33,6 +33,14 @@ final class PersistenceService: ObservableObject {
     /// Kompanzasyon panosu bakım takip kayıtları
     @Published var maintenanceRecords: [MaintenanceRecord] = []
 
+    /// Oturum boyunca aktif teklif (kalıcı değil — uygulama yeniden açılınca sıfırlanır)
+    @Published var activeQuoteId: UUID? = nil
+
+    var activeQuote: Quote? {
+        guard let id = activeQuoteId else { return nil }
+        return quotes.first(where: { $0.id == id })
+    }
+
     // MARK: - UserDefaults Anahtarları
 
     private enum Keys {
@@ -187,6 +195,38 @@ final class PersistenceService: ObservableObject {
     /// Toplam müşteri sayısı
     var customerCount: Int {
         customers.count
+    }
+
+    // MARK: - Teklif Entegrasyonu (Hesap Ekranları → Müşteri Teklifi)
+
+    /// Seçilen müşterinin mevcut taslak teklifine kalem ekler; yoksa yeni teklif oluşturur.
+    func addItemsToQuote(_ newItems: [QuoteItem], forCustomer customer: Customer) {
+        if let idx = quotes.firstIndex(where: { $0.customerId == customer.id && $0.status == .draft }) {
+            quotes[idx].items.append(contentsOf: newItems)
+            persist(quotes, key: Keys.quotes)
+            activeQuoteId = quotes[idx].id
+        } else {
+            var quote = QuoteEngine.createNewQuote(sequence: settings.nextQuoteNumber, settings: settings)
+            quote.customerId  = customer.id
+            quote.customerName    = customer.name
+            quote.customerPhone   = customer.phone
+            quote.customerEmail   = customer.email
+            quote.customerAddress = customer.address
+            quote.items = newItems
+            saveQuote(quote)
+            activeQuoteId = quote.id
+            var updated = settings
+            updated.nextQuoteNumber += 1
+            saveSettings(updated)
+        }
+    }
+
+    /// Aktif teklife tek kalem ekler (MaterialListView akışı için).
+    func addItemToActiveQuote(_ item: QuoteItem) {
+        guard let id = activeQuoteId,
+              let idx = quotes.firstIndex(where: { $0.id == id }) else { return }
+        quotes[idx].items.append(item)
+        persist(quotes, key: Keys.quotes)
     }
 
     // MARK: - Bakım Takip İşlemleri

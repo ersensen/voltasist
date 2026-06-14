@@ -8,37 +8,53 @@ import SwiftUI
 
 // MARK: - Hesap Sekmeleri
 
-/// 4 elektrik hesap alt sekmesi
+/// Elektrik hesap alt sekmeleri
 enum CalcTab: Int, CaseIterable {
-    case cable        = 0
-    case load         = 1
-    case lighting     = 2
-    case compensation = 3
+    case cable          = 0
+    case load           = 1
+    case lighting       = 2
+    case compensation   = 3
+    case shortCircuit   = 4
+    case transformer    = 5
+    case earthing       = 6
+    case motorStarting  = 7
 
     var title: String {
         switch self {
-        case .cable:        return "Kablo Kesit"
-        case .load:         return "Yük / Güç"
-        case .lighting:     return "Aydınlatma"
-        case .compensation: return "Kompanzasyon"
+        case .cable:         return "Kablo Kesit"
+        case .load:          return "Yük / Güç"
+        case .lighting:      return "Aydınlatma"
+        case .compensation:  return "Kompanzasyon"
+        case .shortCircuit:  return "Kısa Devre"
+        case .transformer:   return "Trafo Boyut"
+        case .earthing:      return "Topraklama"
+        case .motorStarting: return "Motor Başlatma"
         }
     }
 
     var icon: String {
         switch self {
-        case .cable:        return "cable.connector"
-        case .load:         return "bolt.circle.fill"
-        case .lighting:     return "lightbulb.fill"
-        case .compensation: return "waveform.path.ecg"
+        case .cable:         return "cable.connector"
+        case .load:          return "bolt.circle.fill"
+        case .lighting:      return "lightbulb.fill"
+        case .compensation:  return "waveform.path.ecg"
+        case .shortCircuit:  return "bolt.badge.xmark.fill"
+        case .transformer:   return "square.3.layers.3d.fill"
+        case .earthing:      return "arrow.down.to.line.compact"
+        case .motorStarting: return "fan.fill"
         }
     }
 
     var color: Color {
         switch self {
-        case .cable:        return Color(red: 1.0, green: 0.75, blue: 0.0) // Amber
-        case .load:         return Color.orange
-        case .lighting:     return Color.cyan
-        case .compensation: return Color.purple
+        case .cable:         return Color(red: 1.0, green: 0.75, blue: 0.0)
+        case .load:          return Color.orange
+        case .lighting:      return Color.cyan
+        case .compensation:  return Color.purple
+        case .shortCircuit:  return Color.red
+        case .transformer:   return Color.teal
+        case .earthing:      return Color(red: 0.3, green: 0.85, blue: 0.5)
+        case .motorStarting: return Color.indigo
         }
     }
 }
@@ -177,6 +193,14 @@ struct ElectricCalculatorView: View {
             LightingCalculatorView()
         case .compensation:
             CompensationCalculatorView()
+        case .shortCircuit:
+            ShortCircuitCalculatorView()
+        case .transformer:
+            TransformerSizingCalculatorView()
+        case .earthing:
+            EarthingCalculatorView()
+        case .motorStarting:
+            MotorStartingCalculatorView()
         }
     }
 }

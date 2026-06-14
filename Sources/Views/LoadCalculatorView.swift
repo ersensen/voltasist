@@ -27,6 +27,8 @@ struct LoadCalculatorView: View {
     @State private var showQuoteAdded: Bool     = false
     @State private var showTransferAlert: Bool  = false
     @State private var transferredKW: Double    = 0
+    @State private var pendingQuoteItems: [QuoteItem] = []
+    @State private var showCustomerPicker      = false
 
     @AppStorage("pendingCableKW") private var pendingCableKW: Double = 0
     @EnvironmentObject private var persistence: PersistenceService
@@ -73,7 +75,15 @@ struct LoadCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
+            Text("Müşteri teklifine eklendi. Teklif sekmesinden görüntüleyebilirsiniz.")
+        }
+        .sheet(isPresented: $showCustomerPicker) {
+            CustomerPickerView { customer in
+                persistence.addItemsToQuote(pendingQuoteItems, forCustomer: customer)
+                showCustomerPicker = false
+                showQuoteAdded = true
+            }
+            .environmentObject(persistence)
         }
         .sheet(isPresented: $showAddSheet) {
             AddLoadSheet(existingLoad: editingLoad) { load in
@@ -301,17 +311,8 @@ struct LoadCalculatorView: View {
 
             // Teklif butonu
             Button {
-                let items = QuoteEngine.itemsFromLoad(res)
-                var quote = QuoteEngine.createNewQuote(
-                    sequence: persistence.settings.nextQuoteNumber,
-                    settings: persistence.settings
-                )
-                quote.items = items
-                persistence.saveQuote(quote)
-                var updatedSettings = persistence.settings
-                updatedSettings.nextQuoteNumber += 1
-                persistence.saveSettings(updatedSettings)
-                showQuoteAdded = true
+                pendingQuoteItems = QuoteEngine.itemsFromLoad(res)
+                showCustomerPicker = true
             } label: {
                 Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                     .font(.system(size: 14, weight: .bold, design: .rounded))

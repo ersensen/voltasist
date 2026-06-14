@@ -15,7 +15,10 @@ struct MaterialListView: View {
     @State private var showAddSheet         = false
     @State private var editingMaterial: Material? = nil
     @State private var showLowStockOnly     = false
-    @State private var quoteForMaterial: Quote? = nil
+    @State private var pendingMaterial: Material? = nil
+    @State private var showCustomerPicker   = false
+    @State private var showActiveQuotePicker = false
+    @State private var showAddedConfirm     = false
 
     private let amber  = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bg     = Color(red: 0.06, green: 0.06, blue: 0.09)
@@ -46,6 +49,9 @@ struct MaterialListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Aktif teklif banner
+            if persistence.activeQuote != nil { activeQuoteBanner }
+
             // Arama + filtre
             searchBar
             filterChips
@@ -72,7 +78,7 @@ struct MaterialListView: View {
                                 } onDelete: {
                                     persistence.deleteMaterial(id: material.id)
                                 } onAddToQuote: {
-                                    quoteForMaterial = makeQuote(from: material)
+                                    addToQuote(material: material)
                                 } onBrandChange: { newBrand in
                                     var updated = material
                                     updated.brand = newBrand.isEmpty ? nil : newBrand
@@ -97,10 +103,18 @@ struct MaterialListView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showAddSheet = true } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(amber)
+                HStack(spacing: 12) {
+                    Button { showActiveQuotePicker = true } label: {
+                        Image(systemName: persistence.activeQuoteId == nil
+                              ? "doc.badge.plus" : "doc.badge.checkmark")
+                            .font(.system(size: 18))
+                            .foregroundColor(persistence.activeQuoteId == nil ? .gray : .green)
+                    }
+                    Button { showAddSheet = true } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(amber)
+                    }
                 }
             }
         }
@@ -110,12 +124,82 @@ struct MaterialListView: View {
         .sheet(item: $editingMaterial) { mat in
             MaterialFormSheet(material: mat, onSave: { persistence.saveMaterial($0) })
         }
-        .sheet(item: $quoteForMaterial) { quote in
-            NavigationStack {
-                QuoteBuilderView(existingQuote: quote)
-                    .environmentObject(persistence)
+        .sheet(isPresented: $showCustomerPicker) {
+            CustomerPickerView { customer in
+                if let mat = pendingMaterial {
+                    let item = makeQuoteItem(from: mat)
+                    persistence.addItemsToQuote([item], forCustomer: customer)
+                    pendingMaterial = nil
+                }
+                showCustomerPicker = false
+                showAddedConfirm = true
             }
+            .environmentObject(persistence)
         }
+        .sheet(isPresented: $showActiveQuotePicker) {
+            ActiveQuotePickerView().environmentObject(persistence)
+        }
+        .alert("Malzeme Eklendi", isPresented: $showAddedConfirm) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text("Aktif teklife eklendi. Teklif sekmesinden görüntüleyebilirsiniz.")
+        }
+    }
+
+    // MARK: - Aktif Teklif Banner
+
+    private var activeQuoteBanner: some View {
+        let aq = persistence.activeQuote!
+        return HStack(spacing: 10) {
+            Image(systemName: "doc.badge.checkmark").foregroundStyle(.green).font(.system(size: 16))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Aktif Teklif: \(aq.customerName.isEmpty ? "İsimsiz" : aq.customerName)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
+                Text("\(aq.items.count) kalem · \(aq.grandTotal.currencyFormatted)")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.green)
+            }
+            Spacer()
+            Button {
+                showActiveQuotePicker = true
+            } label: {
+                Text("Değiştir")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(amber)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(amber.opacity(0.12)).cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(amber.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color.green.opacity(0.07))
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(Color.green.opacity(0.2)), alignment: .bottom)
+    }
+
+    // MARK: - Teklife Ekleme Mantığı
+
+    private func addToQuote(material: Material) {
+        if persistence.activeQuoteId != nil {
+            // Aktif teklif var — doğrudan ekle
+            let item = makeQuoteItem(from: material)
+            persistence.addItemToActiveQuote(item)
+            showAddedConfirm = true
+        } else {
+            // Aktif teklif yok — müşteri seç
+            pendingMaterial = material
+            showCustomerPicker = true
+        }
+    }
+
+    private func makeQuoteItem(from material: Material) -> QuoteItem {
+        QuoteItem(
+            title: material.name,
+            description: material.brand,
+            category: .material,
+            quantity: 1.0,
+            unit: material.unit,
+            unitPrice: material.salePrice,
+            vatRate: persistence.settings.defaultVatRate
+        )
     }
 
     // MARK: - Arama Çubuğu
@@ -255,28 +339,7 @@ struct MaterialListView: View {
         .listRowInsets(EdgeInsets())
     }
 
-    // MARK: - Yardımcı
-
-    private func makeQuote(from material: Material) -> Quote {
-        let item = QuoteItem(
-            title: material.name,
-            description: material.brand,
-            category: .material,
-            quantity: 1.0,
-            unit: material.unit,
-            unitPrice: material.salePrice,
-            vatRate: persistence.settings.defaultVatRate
-        )
-        var quote = QuoteEngine.createNewQuote(
-            sequence: persistence.settings.nextQuoteNumber,
-            settings: persistence.settings
-        )
-        quote.items = [item]
-        var updatedSettings = persistence.settings
-        updatedSettings.nextQuoteNumber += 1
-        persistence.saveSettings(updatedSettings)
-        return quote
-    }
+    // MARK: - Boş Durum
 
     // MARK: - Boş Durum
 

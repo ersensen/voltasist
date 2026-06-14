@@ -53,6 +53,8 @@ struct CompensationCalculatorView: View {
     // MARK: State — Sekme
     @State private var selectedTab: CompTab = .current
     @State private var showQuoteAdded = false
+    @State private var pendingQuoteItems: [QuoteItem] = []
+    @State private var showCustomerPicker = false
 
     // MARK: State — Ortak Parametreler
     @State private var activePowerKW: String     = "100"
@@ -112,7 +114,15 @@ struct CompensationCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
+            Text("Müşteri teklifine eklendi. Teklif sekmesinden görüntüleyebilirsiniz.")
+        }
+        .sheet(isPresented: $showCustomerPicker) {
+            CustomerPickerView { customer in
+                persistence.addItemsToQuote(pendingQuoteItems, forCustomer: customer)
+                showCustomerPicker = false
+                showQuoteAdded = true
+            }
+            .environmentObject(persistence)
         }
     }
 
@@ -1131,19 +1141,10 @@ struct CompensationCalculatorView: View {
                         investmentCostTL: Double(investmentCost) ?? 25000
                     )
                     if let compResult = try? CompensationEngine.calculate(input: compInput) {
-                        let items = QuoteEngine.itemsFromCompensation(compResult)
-                        var quote = QuoteEngine.createNewQuote(
-                            sequence: persistence.settings.nextQuoteNumber,
-                            settings: persistence.settings
-                        )
-                        quote.items = items
-                        persistence.saveQuote(quote)
-                        var updatedSettings = persistence.settings
-                        updatedSettings.nextQuoteNumber += 1
-                        persistence.saveSettings(updatedSettings)
+                        pendingQuoteItems = QuoteEngine.itemsFromCompensation(compResult)
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        showCustomerPicker = true
                     }
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    showQuoteAdded = true
                 } label: {
                     Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                         .font(.system(size: 16, weight: .bold, design: .rounded))

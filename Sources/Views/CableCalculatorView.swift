@@ -70,6 +70,8 @@ struct CableCalculatorView: View {
     @State private var isCalculating = false
     @State private var showQuoteAdded = false
     @State private var warningShake = false
+    @State private var pendingQuoteItems: [QuoteItem] = []
+    @State private var showCustomerPicker = false
 
     @EnvironmentObject private var persistence: PersistenceService
     @AppStorage("pendingCableKW") private var pendingCableKW: Double = 0
@@ -133,7 +135,15 @@ struct CableCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
+            Text("Müşteri teklifine eklendi. Teklif sekmesinden görüntüleyebilirsiniz.")
+        }
+        .sheet(isPresented: $showCustomerPicker) {
+            CustomerPickerView { customer in
+                persistence.addItemsToQuote(pendingQuoteItems, forCustomer: customer)
+                showCustomerPicker = false
+                showQuoteAdded = true
+            }
+            .environmentObject(persistence)
         }
     }
 
@@ -550,19 +560,10 @@ struct CableCalculatorView: View {
                 let length = Double(lengthM.replacingOccurrences(of: ",", with: ".")) ?? 50.0
                 let conductor: ConductorType = isCopper ? .copper : .aluminum
                 let install: InstallationType = selectedInsulation == .nym ? .surface : .inConduit
-                let items = QuoteEngine.itemsFromCableCalculation(
+                pendingQuoteItems = QuoteEngine.itemsFromCableCalculation(
                     res, lengthM: length, conductorType: conductor, installationType: install
                 )
-                var quote = QuoteEngine.createNewQuote(
-                    sequence: persistence.settings.nextQuoteNumber,
-                    settings: persistence.settings
-                )
-                quote.items = items
-                persistence.saveQuote(quote)
-                var updatedSettings = persistence.settings
-                updatedSettings.nextQuoteNumber += 1
-                persistence.saveSettings(updatedSettings)
-                showQuoteAdded = true
+                showCustomerPicker = true
             } label: {
                 Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                     .font(.system(size: 14, weight: .bold, design: .rounded))

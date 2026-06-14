@@ -17,10 +17,10 @@ enum AppTab: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .calculators: return "Hesaplar"
+        case .calculators: return "Mühendislik"
         case .solar:       return "Solar Güneş"
         case .materials:   return "Malzeme Listesi"
-        case .engineering: return "Mühendislik"
+        case .engineering: return "Teklif"
         case .maintenance: return "Bakım Takip"
         case .dashboard:   return "Dashboard"
         }
@@ -31,7 +31,7 @@ enum AppTab: Int, CaseIterable {
         case .calculators: return "bolt.fill"
         case .solar:       return "sun.max.fill"
         case .materials:   return "list.bullet"
-        case .engineering: return "chart.line.uptrend.xyaxis"
+        case .engineering: return "doc.text.fill"
         case .maintenance: return "wrench.and.screwdriver.fill"
         case .dashboard:   return "house.fill"
         }

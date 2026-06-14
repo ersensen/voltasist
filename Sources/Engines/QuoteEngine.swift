@@ -270,6 +270,84 @@ struct QuoteEngine {
         return items
     }
 
+    // MARK: - Aydınlatma Sonucundan Teklif Kalemleri
+
+    /// Aydınlatma hesaplama sonucundan teklif kalemleri oluştur
+    static func itemsFromLighting(
+        _ result: LightingCalculationResult,
+        laborRatePerHour: Double = 450.0
+    ) -> [QuoteItem] {
+        var items: [QuoteItem] = []
+
+        let wattInt    = Int(result.fixtureWatt)
+        let lumensInt  = Int(result.luminousEfficacy * result.fixtureWatt)
+
+        let fixtureUnitPrice: Double
+        switch result.fixtureWatt {
+        case ..<10:    fixtureUnitPrice = 150.0
+        case 10..<20:  fixtureUnitPrice = 280.0
+        case 20..<40:  fixtureUnitPrice = 420.0
+        case 40..<70:  fixtureUnitPrice = 680.0
+        case 70..<100: fixtureUnitPrice = 950.0
+        default:       fixtureUnitPrice = 1_400.0
+        }
+
+        items.append(QuoteItem(
+            title: "LED Panel Armatür \(wattInt)W / \(lumensInt) lm",
+            description: "EN 12464-1 uyumlu LED armatür, \(Int(result.luminousEfficacy)) lm/W, enerji sınıfı \(result.energyClassification)",
+            category: .material,
+            quantity: Double(result.fixtureCount),
+            unit: "adet",
+            unitPrice: fixtureUnitPrice,
+            vatRate: 0.20
+        ))
+
+        items.append(QuoteItem(
+            title: "Armatür Montaj İşçiliği",
+            description: "\(result.fixtureCount) adet LED armatür montajı, kablaj ve devreye alma",
+            category: .labor,
+            quantity: Double(result.fixtureCount) * 0.5,
+            unit: "saat",
+            unitPrice: laborRatePerHour,
+            vatRate: 0.20
+        ))
+
+        return items
+    }
+
+    // MARK: - Yük Sonucundan Teklif Kalemleri
+
+    /// Yük hesaplama sonucundan teklif kalemleri oluştur
+    static func itemsFromLoad(
+        _ result: LoadCalculationResult,
+        laborRatePerHour: Double = 450.0
+    ) -> [QuoteItem] {
+        var items: [QuoteItem] = []
+
+        let fusePrice = fuseUnitPrice(amps: result.recommendedMainFuseA)
+        items.append(QuoteItem(
+            title: "Ana Dağıtım Sigortası \(result.recommendedMainFuseA)A (3P)",
+            description: "IEC 60898 uyumlu 3 kutuplu MCB, \(result.recommendedMainFuseA)A, talep gücü \(String(format: "%.1f", result.demandKW)) kW",
+            category: .material,
+            quantity: 1,
+            unit: "adet",
+            unitPrice: fusePrice,
+            vatRate: 0.20
+        ))
+
+        items.append(QuoteItem(
+            title: "Pano Bağlantı ve Devreye Alma İşçiliği",
+            description: String(format: "Talep gücü %.1f kW / %.1f kVA — pano bağlantı, test ve ölçüm raporu", result.demandKW, result.apparentKVA),
+            category: .labor,
+            quantity: 4.0,
+            unit: "saat",
+            unitPrice: laborRatePerHour,
+            vatRate: 0.20
+        ))
+
+        return items
+    }
+
     // MARK: - Teklif Özeti Hesabı
 
     /// Teklif toplam değerlerini hesapla

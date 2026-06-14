@@ -126,7 +126,7 @@ struct CableCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Kablo kalemleri yeni taslak teklife eklendi.")
+            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
         }
     }
 

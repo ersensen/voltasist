@@ -57,7 +57,7 @@ struct DashboardView: View {
                 Text(greetingText)
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundColor(.gray)
-                Text("Elektrik Mühendisliği Asistanın")
+                Text("Elektrik İşleri Saha Asistanı")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
             }

@@ -104,7 +104,7 @@ struct CompensationCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Kompanzasyon kalemleri yeni taslak teklife eklendi.")
+            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
         }
     }
 

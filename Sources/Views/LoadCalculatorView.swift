@@ -25,6 +25,9 @@ struct LoadCalculatorView: View {
     // MARK: State — Sonuç
     @State private var result: LoadCalculationResult? = nil
     @State private var resultVisible: Bool      = false
+    @State private var showQuoteAdded: Bool     = false
+
+    @EnvironmentObject private var persistence: PersistenceService
 
     // MARK: Tasarım
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
@@ -60,6 +63,11 @@ struct LoadCalculatorView: View {
             .padding(.top, 12)
         }
         .background(bgColor.ignoresSafeArea())
+        .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
+        }
         .sheet(isPresented: $showAddSheet) {
             AddLoadSheet(existingLoad: editingLoad) { load in
                 if let existing = editingLoad,
@@ -270,6 +278,30 @@ struct LoadCalculatorView: View {
 
             // Bar chart
             chartCard(res)
+
+            // Teklif butonu
+            Button {
+                let items = QuoteEngine.itemsFromLoad(res)
+                var quote = QuoteEngine.createNewQuote(
+                    sequence: persistence.settings.nextQuoteNumber,
+                    settings: persistence.settings
+                )
+                quote.items = items
+                persistence.saveQuote(quote)
+                var updatedSettings = persistence.settings
+                updatedSettings.nextQuoteNumber += 1
+                persistence.saveSettings(updatedSettings)
+                showQuoteAdded = true
+            } label: {
+                Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(amber)
+                    .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -665,5 +697,6 @@ struct AddLoadSheet: View {
     ScrollView {
         LoadCalculatorView()
     }
+    .environmentObject(PersistenceService.shared)
     .preferredColorScheme(.dark)
 }

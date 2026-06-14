@@ -30,13 +30,17 @@ final class PersistenceService: ObservableObject {
     /// Uygulama geneli ayarlar
     @Published var settings: AppSettings = .defaultSettings
 
+    /// Kompanzasyon panosu bakım takip kayıtları
+    @Published var maintenanceRecords: [MaintenanceRecord] = []
+
     // MARK: - UserDefaults Anahtarları
 
     private enum Keys {
-        static let customers  = "voltasist_customers_v1"
-        static let quotes     = "voltasist_quotes_v1"
-        static let settings   = "voltasist_settings_v1"
-        static let materials  = "voltasist_materials_v1"
+        static let customers    = "voltasist_customers_v1"
+        static let quotes       = "voltasist_quotes_v1"
+        static let settings     = "voltasist_settings_v1"
+        static let materials    = "voltasist_materials_v1"
+        static let maintenance  = "voltasist_maintenance_v1"
     }
 
     // MARK: - Init
@@ -51,10 +55,11 @@ final class PersistenceService: ObservableObject {
     /// Uygulama başlangıcında UserDefaults'tan tüm veriyi yükler.
     /// Bozuk JSON varsa boş array ile güvenli şekilde devam eder.
     func loadAll() {
-        customers  = load(key: Keys.customers,  type: [Customer].self)  ?? []
-        quotes     = load(key: Keys.quotes,     type: [Quote].self)     ?? []
-        materials  = load(key: Keys.materials,  type: [Material].self)  ?? []
-        settings   = load(key: Keys.settings,   type: AppSettings.self) ?? .defaultSettings
+        customers          = load(key: Keys.customers,    type: [Customer].self)          ?? []
+        quotes             = load(key: Keys.quotes,      type: [Quote].self)             ?? []
+        materials          = load(key: Keys.materials,   type: [Material].self)          ?? []
+        settings           = load(key: Keys.settings,    type: AppSettings.self)         ?? .defaultSettings
+        maintenanceRecords = load(key: Keys.maintenance, type: [MaintenanceRecord].self) ?? []
         if materials.count < DefaultMaterialCatalog.all.count { seedDefaultMaterials() }
     }
 
@@ -182,6 +187,34 @@ final class PersistenceService: ObservableObject {
     /// Toplam müşteri sayısı
     var customerCount: Int {
         customers.count
+    }
+
+    // MARK: - Bakım Takip İşlemleri
+
+    func saveMaintenanceRecord(_ record: MaintenanceRecord) {
+        if let index = maintenanceRecords.firstIndex(where: { $0.id == record.id }) {
+            maintenanceRecords[index] = record
+        } else {
+            maintenanceRecords.append(record)
+        }
+        persist(maintenanceRecords, key: Keys.maintenance)
+    }
+
+    func deleteMaintenanceRecord(id: UUID) {
+        maintenanceRecords.removeAll { $0.id == id }
+        persist(maintenanceRecords, key: Keys.maintenance)
+    }
+
+    var pendingMaintenanceCount: Int {
+        maintenanceRecords.filter { $0.isOverdue || $0.isDueSoon }.count
+    }
+
+    var overdueMaintenanceCount: Int {
+        maintenanceRecords.filter { $0.isOverdue }.count
+    }
+
+    var dueSoonMaintenanceCount: Int {
+        maintenanceRecords.filter { $0.isDueSoon }.count
     }
 
     /// Gelecek 7 gün içinde geçerlilik tarihi dolacak teklifler

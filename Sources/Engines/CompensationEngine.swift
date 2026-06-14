@@ -234,19 +234,17 @@ struct CompensationEngine {
         var cumulativeSavings: [Double] = []
         var cumulativeNominal = 0.0
 
-        for year in 1...10 {
-            // Yıllık nakit akışı — basit model: sabit yıllık tasarruf
-            let discountFactor = pow(1.0 + discountRate, -Double(year))
-            npv += annualSaving * discountFactor
-            cumulativeNominal += annualSaving
-            cumulativeSavings.append(cumulativeNominal)
+        // Aylık nakit akışı ile NBD hesabı (120 ay = 10 yıl)
+        for month in 1...(10 * 12) {
+            npv += monthlySavingTL / pow(1.0 + monthlyRate, Double(month))
+            if month % 12 == 0 {
+                cumulativeNominal += annualSaving
+                cumulativeSavings.append(cumulativeNominal)
+            }
         }
 
         // İVK (IRR) — Newton-Raphson iterasyonu (10 yıl)
         let irr = calculateIRR(investment: investmentTL, annualSaving: annualSaving, years: 10)
-
-        // Aylık iskonto oranı uyarısı — kullanılmıyor ama derleme için tutuluyor
-        _ = monthlyRate
 
         return (paybackMonths, npv, irr, cumulativeSavings)
     }
@@ -384,7 +382,7 @@ struct CompensationEngine {
         let copperLossSavingMonthly: Double
         if let reduction = copperLossReduction, let trafoKVA = input.transformerKVA {
             let nominalCopperLossKW = trafoKVA * 0.015 / 1000.0
-            copperLossSavingMonthly = nominalCopperLossKW * (reduction / 100.0) * 720.0 * 4.50
+            copperLossSavingMonthly = nominalCopperLossKW * (reduction / 100.0) * 720.0 * input.electricityTariff
         } else {
             copperLossSavingMonthly = 0.0
         }

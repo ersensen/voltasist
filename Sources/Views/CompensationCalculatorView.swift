@@ -76,6 +76,9 @@ struct CompensationCalculatorView: View {
     @State private var requiredQcKVAr: Double    = 0.0
     @State private var monthlySaving: Double     = 0.0
 
+    // MARK: State — THD Giriş
+    @State private var thdText: String           = "10.0"
+
     // MARK: Tasarım
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -95,12 +98,17 @@ struct CompensationCalculatorView: View {
                         .padding(.bottom, 24)
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
         }
         .background(bgColor.ignoresSafeArea())
         .onAppear { recalculate() }
         .onChange(of: activePowerKW)    { _, _ in recalculate() }
         .onChange(of: apparentPowerKVA) { _, _ in recalculate() }
         .onChange(of: targetCosPhi)     { _, _ in recalculate() }
+        .onChange(of: penaltyRate)      { _, _ in recalculate() }
+        .onChange(of: systemVoltage)    { _, _ in recalculate() }
+        .onChange(of: thdPercent)       { _, _ in recalculate() }
+        .onChange(of: transformerKVA)   { _, _ in recalculate() }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
@@ -618,9 +626,16 @@ struct CompensationCalculatorView: View {
     // MARK: ── SEKME 3: AKP Boyutlandırma ──
 
     private var akpTab: some View {
-        let stepSize: Double = 5.0
+        let stepSize: Double
+        switch requiredQcKVAr {
+        case ..<25:  stepSize = 12.5
+        case ..<75:  stepSize = 25.0
+        case ..<150: stepSize = 50.0
+        default:     stepSize = 100.0
+        }
         let stepCount = max(1, Int(ceil(requiredQcKVAr / stepSize)))
-        let contactorA = (stepSize * 1000.0) / (sqrt(3.0) * 400.0)
+        let systemV = Double(systemVoltage) ?? 400.0
+        let contactorA = (stepSize * 1000.0) / (sqrt(3.0) * systemV) * 1.43
         let needsReactor = thdPercent > 8.0
 
         return VStack(spacing: 16) {
@@ -704,7 +719,11 @@ struct CompensationCalculatorView: View {
     // MARK: ── SEKME 4: Harmonik Analiz ──
 
     private var harmonicTab: some View {
-        let resonanceHz = frequency * sqrt(requiredQcKVAr / max(1, Double(activePowerKW) ?? 100))
+        let trafoKVA = Double(transformerKVA) ?? 250.0
+        let sccKVA = trafoKVA / 0.06
+        let resonanceHz = requiredQcKVAr > 0
+            ? frequency * sqrt(sccKVA / requiredQcKVAr)
+            : 0.0
         let riskLevel: Int  // 0=yeşil, 1=turuncu, 2=kırmızı
         if thdPercent < 5        { riskLevel = 0 }
         else if thdPercent < 15  { riskLevel = 1 }
@@ -721,12 +740,28 @@ struct CompensationCalculatorView: View {
                     Text("Toplam Harmonik Distorsiyon (THD)")
                         .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Spacer()
-                    Text(String(format: "%%%.0f", thdPercent))
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(riskColor)
+                    HStack(spacing: 4) {
+                        TextField("0", text: $thdText)
+                            .keyboardType(.decimalPad)
+                            .frame(width: 50)
+                            .multilineTextAlignment(.trailing)
+                            .styledInput()
+                            .onChange(of: thdText) { _, newVal in
+                                let cleaned = newVal.replacingOccurrences(of: ",", with: ".")
+                                if let v = Double(cleaned), v >= 0, v <= 40 {
+                                    thdPercent = v
+                                }
+                            }
+                        Text("%")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(riskColor)
+                    }
                 }
                 Slider(value: $thdPercent, in: 0...40, step: 0.5)
                     .tint(riskColor)
+                    .onChange(of: thdPercent) { _, newVal in
+                        thdText = String(format: "%.1f", newVal)
+                    }
                 HStack {
                     Text("Temiz").font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
                     Spacer()
@@ -1074,7 +1109,7 @@ struct CompensationCalculatorView: View {
                 }
                 standardBadge(standard: "IEC 61921", desc: "Power factor correction capacitors")
                 standardBadge(standard: "EN 60831", desc: "Shunt power capacitors of the self-healing type")
-                standardBadge(standard: "IEC 61000-3-2", desc: "Harmonics — Class A limits")
+                standardBadge(standard: "IEC 61000-3-12", desc: "Harmonics — Industrial systems >16A")
                 standardBadge(standard: "TS EN 50160", desc: "Şebeke gerilim karakteristikleri")
             }
             .padding(18)
@@ -1120,6 +1155,20 @@ struct CompensationCalculatorView: View {
                 .buttonStyle(.plain)
 
                 Button {
+                    let pdfData = PDFService.generateCompensationReportPDF(
+                        activePowerKW:    Double(activePowerKW)    ?? 0,
+                        apparentPowerKVA: Double(apparentPowerKVA) ?? 0,
+                        currentCosPhi:    currentCosPhi,
+                        targetCosPhi:     targetCosPhi,
+                        requiredQcKVAr:   requiredQcKVAr,
+                        thdPercent:       thdPercent,
+                        penaltyRate:      penaltyRate,
+                        monthlySaving:    monthlySaving,
+                        investmentCost:   Double(investmentCost)   ?? 25000,
+                        transformerKVA:   Double(transformerKVA)   ?? 250,
+                        settings:         persistence.settings
+                    )
+                    ShareService.sharePDF(data: pdfData, filename: "Kompanzasyon-Raporu")
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 } label: {
                     Label("PDF Önizleme", systemImage: "doc.richtext.fill")
@@ -1192,7 +1241,7 @@ struct CompensationCalculatorView: View {
                 remaining -= step
             }
         }
-        return result.prefix(6).sorted(by: >)
+        return result.sorted(by: >)
     }
 
     private func inputFieldRow(label: String, binding: Binding<String>, keyboard: UIKeyboardType) -> some View {

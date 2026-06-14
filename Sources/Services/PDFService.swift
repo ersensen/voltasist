@@ -587,6 +587,112 @@ struct PDFService {
         return fmt.string(from: NSNumber(value: value)) ?? "₺0,00"
     }
 
+    // MARK: - Kompanzasyon Raporu PDF
+
+    /// Reaktif güç kompanzasyonu analiz özet raporu üretir.
+    static func generateCompensationReportPDF(
+        activePowerKW: Double,
+        apparentPowerKVA: Double,
+        currentCosPhi: Double,
+        targetCosPhi: Double,
+        requiredQcKVAr: Double,
+        thdPercent: Double,
+        penaltyRate: Double,
+        monthlySaving: Double,
+        investmentCost: Double,
+        transformerKVA: Double,
+        settings: AppSettings
+    ) -> Data {
+        let pageRect = CGRect(x: 0, y: 0, width: Layout.pageWidth, height: Layout.pageHeight)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+
+        return renderer.pdfData { ctx in
+            ctx.beginPage()
+            var y: CGFloat = 0
+
+            // Header band
+            ctx.cgContext.setFillColor(Palette.dark.cgColor)
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: pageRect.width, height: Layout.headerHeight))
+            ctx.cgContext.setFillColor(Palette.amber.cgColor)
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: 90, height: Layout.headerHeight))
+            NSAttributedString(string: "⚡", attributes: [.font: font(size: 38, weight: .bold), .foregroundColor: Palette.dark])
+                .draw(at: CGPoint(x: 22, y: (Layout.headerHeight - 46) / 2))
+            NSAttributedString(string: settings.companyName, attributes: [.font: font(size: 17, weight: .bold), .foregroundColor: UIColor.white])
+                .draw(at: CGPoint(x: 104, y: 18))
+            NSAttributedString(string: "Reaktif Güç Kompanzasyonu — Analiz Raporu",
+                               attributes: [.font: font(size: 11, weight: .semibold), .foregroundColor: Palette.amber])
+                .draw(at: CGPoint(x: 104, y: 40))
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "tr_TR"); df.dateFormat = "dd MMMM yyyy"
+            NSAttributedString(string: "Tarih: \(df.string(from: Date()))",
+                               attributes: [.font: font(size: 9), .foregroundColor: UIColor(white: 0.75, alpha: 1)])
+                .draw(at: CGPoint(x: pageRect.width - Layout.marginH - 160, y: 40))
+            y = Layout.headerHeight + 20
+
+            // Sections
+            y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Mevcut Durum", startY: y, rows: [
+                ("Aktif Güç",     String(format: "%.0f kW",   activePowerKW)),
+                ("Görünür Güç",   String(format: "%.0f kVA",  apparentPowerKVA)),
+                ("Mevcut cos φ",  String(format: "%.3f",      currentCosPhi)),
+                ("Hedef cos φ",   String(format: "%.2f",      targetCosPhi)),
+                ("THD",           String(format: "%%.1f",     thdPercent)),
+                ("Transformatör", String(format: "%.0f kVA",  transformerKVA)),
+            ])
+
+            y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Kondansatör Hesabı", startY: y + 14, rows: [
+                ("Gerekli Qc",    String(format: "%.1f kVAr", requiredQcKVAr)),
+                ("Sistem Tipi",   requiredQcKVAr > 50 ? "Otomatik Kompanzasyon (AKP)" : "Sabit Kondansatör"),
+                ("Reaktör",       thdPercent > 8 ? "Detuned Reaktör Gerekli" : "Reaktör Gerekmez"),
+            ])
+
+            let paybackMonths = monthlySaving > 0 ? investmentCost / monthlySaving : 999
+            y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Ekonomik Analiz", startY: y + 14, rows: [
+                ("Reaktif Tarife",        formatCurrency(penaltyRate) + "/kVArh"),
+                ("Aylık Tahmini Tasarruf", formatCurrency(monthlySaving)),
+                ("Yıllık Tahmini Tasarruf", formatCurrency(monthlySaving * 12)),
+                ("Planlanan Yatırım",     formatCurrency(investmentCost)),
+                ("Tahmini Geri Ödeme",    String(format: "%.1f ay", paybackMonths)),
+            ])
+
+            y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Standart Uyumluluk", startY: y + 14, rows: [
+                ("Kondansatör",           "IEC 60831 / EN 60831"),
+                ("Harmonik Limitler",     "IEC 61000-3-12 (>16A)"),
+                ("Kompanzasyon Bankaları", "IEC 61921"),
+                ("Şebeke Gerilimi",       "TS EN 50160"),
+            ])
+
+            let footerAttrs: [NSAttributedString.Key: Any] = [.font: font(size: 7), .foregroundColor: UIColor.lightGray]
+            NSAttributedString(string: "VoltAsist — Elektrik Mühendisliği Saha Asistanı  |  Bu rapor otomatik hesaplanmıştır, saha ölçümleriyle doğrulayınız.",
+                               attributes: footerAttrs)
+                .draw(at: CGPoint(x: Layout.marginH, y: pageRect.height - 18))
+        }
+    }
+
+    @discardableResult
+    private static func drawCompSection(ctx: CGContext, pageRect: CGRect, title: String, startY: CGFloat, rows: [(String, String)]) -> CGFloat {
+        var y = startY
+        let totalW = pageRect.width - 2 * Layout.marginH
+
+        ctx.setFillColor(Palette.tableHead.cgColor)
+        ctx.fill(CGRect(x: Layout.marginH, y: y, width: totalW, height: 22))
+        NSAttributedString(string: title, attributes: [.font: font(size: 10, weight: .bold), .foregroundColor: Palette.amber])
+            .draw(at: CGPoint(x: Layout.marginH + 8, y: y + 6))
+        y += 22
+
+        for (index, (label, value)) in rows.enumerated() {
+            if index % 2 == 1 {
+                ctx.setFillColor(Palette.tableAlt.cgColor)
+                ctx.fill(CGRect(x: Layout.marginH, y: y, width: totalW, height: Layout.rowHeight))
+            }
+            NSAttributedString(string: label, attributes: [.font: font(size: 9), .foregroundColor: Palette.dark])
+                .draw(at: CGPoint(x: Layout.marginH + 8, y: y + 6))
+            let valStr = NSAttributedString(string: value, attributes: [.font: font(size: 9, weight: .semibold), .foregroundColor: Palette.dark])
+            valStr.draw(at: CGPoint(x: pageRect.width - Layout.marginH - valStr.size().width - 8, y: y + 6))
+            y += Layout.rowHeight
+        }
+        return y
+    }
+
     // MARK: - Geçici Dosyaya Kaydet
 
     /// PDF Data'yı cihazın geçici dizinine yazar ve dosya URL'sini döndürür.

@@ -18,6 +18,9 @@ struct DashboardView: View {
             VStack(spacing: 20) {
                 headerSection
                 kpiRow
+                if persistence.pendingMaintenanceCount > 0 {
+                    maintenancePendingCard
+                }
                 quickAccessSection
                 recentQuotesSection
             }
@@ -155,6 +158,49 @@ struct DashboardView: View {
         .scaleEffect(appeared ? 1 : 0.9)
         .opacity(appeared ? 1 : 0)
         .animation(.spring(response: 0.45, dampingFraction: 0.75).delay(Double(index) * 0.06), value: appeared)
+    }
+
+    // MARK: Maintenance Pending Card
+
+    private var maintenancePendingCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "wrench.and.screwdriver.fill")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(persistence.overdueMaintenanceCount > 0 ? Color.red : Color.yellow)
+                .shadow(color: (persistence.overdueMaintenanceCount > 0 ? Color.red : Color.yellow).opacity(0.5), radius: 6)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Bekleyen Bakım Kontrolleri")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                HStack(spacing: 12) {
+                    if persistence.overdueMaintenanceCount > 0 {
+                        Label("\(persistence.overdueMaintenanceCount) gecikmiş", systemImage: "exclamationmark.circle.fill")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.red)
+                    }
+                    if persistence.dueSoonMaintenanceCount > 0 {
+                        Label("\(persistence.dueSoonMaintenanceCount) yaklaşıyor", systemImage: "clock.badge.fill")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.yellow)
+                    }
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.gray.opacity(0.5))
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(persistence.overdueMaintenanceCount > 0 ? Color.red.opacity(0.08) : Color.yellow.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(
+                    persistence.overdueMaintenanceCount > 0 ? Color.red.opacity(0.3) : Color.yellow.opacity(0.3),
+                    lineWidth: 1
+                ))
+        )
+        .opacity(appeared ? 1 : 0)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.15), value: appeared)
     }
 
     // MARK: Quick Access

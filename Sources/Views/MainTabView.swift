@@ -12,7 +12,8 @@ enum AppTab: Int, CaseIterable {
     case solar       = 1
     case materials   = 2
     case engineering = 3
-    case dashboard   = 4
+    case maintenance = 4
+    case dashboard   = 5
 
     var title: String {
         switch self {
@@ -20,6 +21,7 @@ enum AppTab: Int, CaseIterable {
         case .solar:       return "Solar Güneş"
         case .materials:   return "Malzeme Listesi"
         case .engineering: return "Mühendislik"
+        case .maintenance: return "Bakım Takip"
         case .dashboard:   return "Dashboard"
         }
     }
@@ -30,6 +32,7 @@ enum AppTab: Int, CaseIterable {
         case .solar:       return "sun.max.fill"
         case .materials:   return "list.bullet"
         case .engineering: return "chart.line.uptrend.xyaxis"
+        case .maintenance: return "wrench.and.screwdriver.fill"
         case .dashboard:   return "house.fill"
         }
     }
@@ -111,6 +114,14 @@ struct MainTabView: View {
                 Label(AppTab.engineering.title, systemImage: AppTab.engineering.icon)
             }
             .tag(AppTab.engineering)
+
+            NavigationStack {
+                MaintenanceTrackingView()
+            }
+            .tabItem {
+                Label(AppTab.maintenance.title, systemImage: AppTab.maintenance.icon)
+            }
+            .tag(AppTab.maintenance)
 
             // Dashboard — QuoteBuilderView'a EngineeringPanelView üzerinden erişilebilir
             NavigationStack {

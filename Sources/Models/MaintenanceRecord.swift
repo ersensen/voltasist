@@ -21,7 +21,9 @@ struct MaintenanceRecord: Identifiable, Codable {
 
     var nextCheckDate: Date {
         let base: Date
-        if let last = readings.sorted(by: { $0.date > $1.date }).first?.date {
+        if let last = visits.sorted(by: { $0.date > $1.date }).first?.date {
+            base = last
+        } else if let last = readings.sorted(by: { $0.date > $1.date }).first?.date {
             base = last
         } else {
             base = installationDate
@@ -86,6 +88,13 @@ struct MaintenanceReading: Identifiable, Codable {
     }
 
     var estimatedPenalty: Double { penaltyKVArh * tariff }
+
+    var capacitivePenaltyKVArh: Double {
+        guard activeKWh > 0 else { return 0 }
+        return max(0, capacitiveKVArh - activeKWh * 0.20)
+    }
+
+    var estimatedCapacitivePenalty: Double { capacitivePenaltyKVArh * tariff }
 }
 
 // MARK: - Durum

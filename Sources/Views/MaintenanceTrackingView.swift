@@ -123,7 +123,7 @@ struct MaintenanceTrackingView: View {
                     if let cp = record.lastCosPhi {
                         Text(String(format: "cos φ %.3f", cp))
                             .font(.system(size: 11, design: .rounded))
-                            .foregroundStyle(cp >= 0.95 ? .green : cp >= 0.90 ? .orange : .red)
+                            .foregroundStyle(record.lastStatus.color)
                     }
                 }
             }
@@ -262,7 +262,7 @@ struct MaintenanceRecordDetailView: View {
                     recordInfoCard
                     if let latest = sortedReadings.first { currentStatusCard(latest) }
                     if localRecord.readings.count >= 2 { trendChartCard }
-                    if localRecord.readings.count >= 4 { cosPhiTrendInsightCard }
+                    if localRecord.readings.count >= 6 { cosPhiTrendInsightCard }
                     if !localRecord.readings.isEmpty { annualSummaryCard }
                     capacitorHealthCard
                     recommendationsCard
@@ -304,12 +304,14 @@ struct MaintenanceRecordDetailView: View {
             MaintenanceReadingFormView(defaultTariff: 0.40) { r in
                 localRecord.readings.append(r)
                 persistence.saveMaintenanceRecord(localRecord)
+                scheduleNotification(for: localRecord)
             }
         }
         .sheet(isPresented: $showEditRecord) {
             MaintenanceRecordFormView(record: localRecord) { updated in
                 localRecord = updated
                 persistence.saveMaintenanceRecord(updated)
+                scheduleNotification(for: updated)
             }
         }
         .sheet(isPresented: $showAddVisit) {
@@ -391,6 +393,10 @@ struct MaintenanceRecordDetailView: View {
                         Text("Tahmini ceza: \(reading.estimatedPenalty.currencyFormatted)")
                             .font(.system(size: 12, design: .rounded)).foregroundStyle(.red)
                     }
+                    if reading.estimatedCapacitivePenalty > 0 {
+                        Text("Tahmini kapasitif ceza: \(reading.estimatedCapacitivePenalty.currencyFormatted)")
+                            .font(.system(size: 12, design: .rounded)).foregroundStyle(.orange)
+                    }
                 }
                 Spacer()
             }
@@ -428,7 +434,7 @@ struct MaintenanceRecordDetailView: View {
                     }
             }
             .frame(height: 180)
-            .chartYScale(domain: 0.70...1.0)
+            .chartYScale(domain: (max(0.0, (data.map(\.cosPhi).min() ?? 0.70) - 0.05))...1.0)
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                     AxisValueLabel(format: .dateTime.month(.abbreviated))
@@ -454,14 +460,14 @@ struct MaintenanceRecordDetailView: View {
 
     private var annualSummaryCard: some View {
         let last12 = Array(localRecord.readings.sorted { $0.date > $1.date }.prefix(12))
-        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty }
+        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty + $1.estimatedCapacitivePenalty }
         let avgCos = last12.isEmpty ? 0.0 : last12.reduce(0.0) { $0 + $1.cosPhi } / Double(last12.count)
         let worst = last12.min(by: { $0.cosPhi < $1.cosPhi })
 
         return VStack(spacing: 12) {
             HStack {
                 Image(systemName: "calendar.badge.clock").foregroundStyle(Color.purple)
-                Text("Son 12 Ay Özeti")
+                Text("Son 12 Ölçüm Özeti")
                     .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
                 Text("\(last12.count) ölçüm")
@@ -492,9 +498,9 @@ struct MaintenanceRecordDetailView: View {
     private var criticalMetricsCard: some View {
         let latest = sortedReadings.first
         let cp = latest?.cosPhi
-        let cpColor: Color = cp.map { $0 >= 0.95 ? .green : $0 >= 0.90 ? .orange : .red } ?? .gray
+        let cpColor: Color = localRecord.lastStatus.color
         let last12 = Array(localRecord.readings.sorted { $0.date > $1.date }.prefix(12))
-        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty }
+        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty + $1.estimatedCapacitivePenalty }
 
         return HStack(spacing: 0) {
             criticalCell(
@@ -580,12 +586,12 @@ struct MaintenanceRecordDetailView: View {
         let recent = Array(sortedReadings.prefix(3))
         let avgCos = recent.isEmpty ? nil : recent.reduce(0.0) { $0 + $1.cosPhi } / Double(recent.count)
         let lastVisit = localRecord.visits.sorted { $0.date > $1.date }.first
-        var red = 0; var yellow = 0
+        var red = 0; var yellow = 0.0
         if let cos = avgCos { if cos < 0.90 { red += 2 } else if cos < 0.95 { yellow += 1 } }
         if localRecord.isOverdue { red += 1 } else if localRecord.isDueSoon { yellow += 1 }
-        if let v = lastVisit { red += v.failureCount; yellow += v.warningCount / 2 }
+        if let v = lastVisit { red += v.failureCount; yellow += Double(v.warningCount) / 2.0 }
         if red >= 2 { return (.red, "Yüksek Risk", "Acil müdahale gerektirir") }
-        if red >= 1 || yellow >= 2 { return (.orange, "Orta Risk", "Yakın zamanda incelenmeli") }
+        if red >= 1 || yellow >= 2.0 { return (.orange, "Orta Risk", "Yakın zamanda incelenmeli") }
         return (.green, "Düşük Risk", "Normal çalışma durumu")
     }
 
@@ -823,6 +829,42 @@ struct MaintenanceRecordDetailView: View {
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.2), lineWidth: 1)))
     }
 
+    // MARK: Notification
+
+    private func scheduleNotification(for record: MaintenanceRecord) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+            guard granted else { return }
+            let center = UNUserNotificationCenter.current()
+            let id = record.id.uuidString
+            center.removePendingNotificationRequests(withIdentifiers: [id + "_warn", id + "_due"])
+            let name = record.customerName.isEmpty ? "Kompanzasyon Panosu" : record.customerName
+            let nextCheck = record.nextCheckDate
+
+            if let warnDate = Calendar.current.date(byAdding: .day, value: -7, to: nextCheck), warnDate > Date() {
+                let c = UNMutableNotificationContent()
+                c.title = "Bakım Kontrolü Yaklaşıyor ⚠️"
+                c.body  = "\(name) — kontrol tarihi 7 gün sonra."
+                c.sound = .default
+                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour], from: warnDate)
+                center.add(UNNotificationRequest(identifier: id + "_warn",
+                                                  content: c,
+                                                  trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
+            }
+
+            if nextCheck > Date() {
+                let c = UNMutableNotificationContent()
+                c.title = "Bakım Kontrolü Zamanı 🔧"
+                c.body  = "\(name) — bugün periyodik bakım kontrol günü!"
+                c.sound = .default
+                c.badge = 1
+                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour], from: nextCheck)
+                center.add(UNNotificationRequest(identifier: id + "_due",
+                                                  content: c,
+                                                  trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
+            }
+        }
+    }
+
     private func readingRow(_ reading: MaintenanceReading) -> some View {
         let cp = reading.cosPhi
         let cpColor: Color = cp >= 0.95 ? .green : cp >= 0.90 ? .orange : .red
@@ -841,6 +883,10 @@ struct MaintenanceRecordDetailView: View {
                 if reading.estimatedPenalty > 0 {
                     Text("-\(reading.estimatedPenalty.currencyFormatted)")
                         .font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
+                }
+                if reading.estimatedCapacitivePenalty > 0 {
+                    Text("-\(reading.estimatedCapacitivePenalty.currencyFormatted)")
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange)
                 }
                 if reading.photoIDs.count > 0 {
                     Label("\(reading.photoIDs.count)", systemImage: "camera.fill")
@@ -1319,7 +1365,10 @@ struct MaintenanceReadingFormView: View {
     private var cpColor: Color { computedCosPhi >= 0.95 ? .green : computedCosPhi >= 0.90 ? .orange : .red }
     private var isOvercompensated: Bool { activeKWh > 0 && capacitive > activeKWh * 0.20 }
     private var penaltyKVArh: Double { activeKWh > 0 ? max(0, inductive - activeKWh * 0.33) : 0 }
-    private var estimatedPenalty: Double { penaltyKVArh * (Double(tariffStr) ?? 0.40) }
+    private var estimatedPenalty: Double { penaltyKVArh * (Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40) }
+
+    private var capacitivePenaltyKVArh: Double { activeKWh > 0 ? max(0, capacitive - activeKWh * 0.20) : 0 }
+    private var estimatedCapacitivePenalty: Double { capacitivePenaltyKVArh * (Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40) }
 
     init(defaultTariff: Double, onSave: @escaping (MaintenanceReading) -> Void) {
         self.defaultTariff = defaultTariff
@@ -1331,7 +1380,27 @@ struct MaintenanceReadingFormView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    if activeKWh > 0 { liveStatusCard }
+                    if activeKWh > 0 {
+                        if inductive > 0 || capacitive > 0 {
+                            liveStatusCard
+                        } else {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                Text("Tüm değerleri girin")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.orange.opacity(0.08))
+                                    .overlay(RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.orange.opacity(0.25), lineWidth: 1))
+                            )
+                        }
+                    }
 
                     formSection("Dönem Bilgisi") {
                         HStack {
@@ -1390,8 +1459,8 @@ struct MaintenanceReadingFormView: View {
                         r.activeKWh       = activeKWh
                         r.inductiveKVArh  = inductive
                         r.capacitiveKVArh = capacitive
-                        r.invoiceAmount   = Double(invoiceStr) ?? 0
-                        r.tariff          = Double(tariffStr) ?? 0.40
+                        r.invoiceAmount   = Double(invoiceStr.replacingOccurrences(of: ",", with: ".")) ?? 0
+                        r.tariff          = Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40
                         r.notes           = notes
                         var photoIDs: [UUID] = []
                         for img in selectedImages {
@@ -1489,6 +1558,10 @@ struct MaintenanceReadingFormView: View {
                     Text("Tahmini ceza: \(estimatedPenalty.currencyFormatted)")
                         .font(.system(size: 12, design: .rounded)).foregroundStyle(.red)
                 }
+                if estimatedCapacitivePenalty > 0 {
+                    Text("Tahmini kapasitif ceza: \(estimatedCapacitivePenalty.currencyFormatted)")
+                        .font(.system(size: 12, design: .rounded)).foregroundStyle(.orange)
+                }
             }
             Spacer()
         }
@@ -1519,6 +1592,19 @@ struct MaintenanceReadingFormView: View {
                 .padding(16)
                 .background(RoundedRectangle(cornerRadius: 14).fill(Color(red: 0.10, green: 0.10, blue: 0.13))
                             .overlay(RoundedRectangle(cornerRadius: 14).stroke(amber.opacity(0.2), lineWidth: 1)))
+        }
+    }
+}
+
+// MARK: - MaintenanceStatus Color
+
+private extension MaintenanceStatus {
+    var color: Color {
+        switch self {
+        case .good:     return .green
+        case .warning:  return .orange
+        case .critical: return .red
+        case .unknown:  return .gray
         }
     }
 }

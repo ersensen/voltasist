@@ -96,7 +96,7 @@ struct MaintenanceVisit: Identifiable, Codable {
 struct MaintenanceChecklist: Identifiable, Codable {
     var id: UUID        = UUID()
     var recordID: UUID
-    var readingID: UUID?
+    var visitID: UUID?
     var date: Date      = Date()
     var items: [ChecklistItem]
 

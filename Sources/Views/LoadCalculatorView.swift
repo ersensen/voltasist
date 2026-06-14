@@ -34,6 +34,9 @@ struct LoadCalculatorView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
+                // Kullanım talimatı
+                loadUsageNote
+
                 // Sistem parametreleri
                 systemParamsCard
 
@@ -70,6 +73,35 @@ struct LoadCalculatorView: View {
             }
         }
         .onChange(of: showAddSheet) { _, _ in editingLoad = nil }
+    }
+
+    // MARK: - Kullanım Talimatı
+
+    private var loadUsageNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(amber)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Nasıl Kullanılır?")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(amber)
+                Text("Cihaz veya devre ekleyip güç (W), adet ve günlük çalışma saatini girin. Talep Faktörü, yüklerin aynı anda çalışma oranıdır (tipik 0.75–0.85); tüm yükler eş zamanlı çalışmıyorsa 1.0'dan küçük tutun. Çıktılar: Talep Gücü → fider ve sigorta boyutu, Görünür Güç → trafo seçimi, Hat Akımı → kablo kesiti hesabının girdisi.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(amber.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(amber.opacity(0.22), lineWidth: 1)
+                )
+        )
     }
 
     // MARK: - Sistem Parametreleri Kartı

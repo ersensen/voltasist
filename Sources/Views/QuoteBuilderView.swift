@@ -39,9 +39,9 @@ struct QuoteBuilderView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    customerSection
                     quoteMetaSection
                     itemsSection
+                    customerSection
                     notesSection
                     Spacer(minLength: 130) // alt butonlar için boşluk
                 }
@@ -78,6 +78,15 @@ struct QuoteBuilderView: View {
         } message: {
             Text("Teklif başarıyla kaydedildi.")
         }
+        .sheet(isPresented: $showCustomerPicker) {
+            CustomerPickerSheet(customers: persistence.customers) { customer in
+                vm.currentQuote.customerId      = customer.id
+                vm.currentQuote.customerName    = customer.name
+                vm.currentQuote.customerPhone   = customer.phone
+                vm.currentQuote.customerEmail   = customer.email
+                vm.currentQuote.customerAddress = customer.address
+            }
+        }
         .toolbar(.hidden, for: .tabBar)
     }
 
@@ -85,11 +94,31 @@ struct QuoteBuilderView: View {
 
     private var customerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("👤 Müşteri Bilgileri")
+            HStack(spacing: 8) {
+                sectionHeader("👤 Müşteri")
+                Text("İsteğe Bağlı")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(6)
+                Spacer()
+                if !persistence.customers.isEmpty {
+                    Button(action: { showCustomerPicker = true }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.badge.plus")
+                            Text("Seç")
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(amber)
+                    }
+                }
+            }
 
             VStack(spacing: 10) {
                 floatingField(icon: "person.fill",
-                              placeholder: "Ad Soyad / Firma",
+                              placeholder: "Ad Soyad / Firma (opsiyonel)",
                               text: $vm.currentQuote.customerName)
 
                 floatingField(icon: "phone.fill",
@@ -578,6 +607,70 @@ struct QuoteItemFormSheet: View {
         let f = NumberFormatter(); f.numberStyle = .currency
         f.currencySymbol = "₺"; f.locale = Locale(identifier: "tr_TR"); f.maximumFractionDigits = 2
         return f.string(from: NSNumber(value: v)) ?? "₺0"
+    }
+}
+
+// MARK: - Müşteri Seçici Sheet
+
+struct CustomerPickerSheet: View {
+    let customers: [Customer]
+    let onSelect: (Customer) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
+
+    private var filtered: [Customer] {
+        guard !searchText.isEmpty else { return customers }
+        return customers.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.phone.contains(searchText)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(filtered) { customer in
+                Button(action: {
+                    onSelect(customer)
+                    dismiss()
+                }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(amber.opacity(0.12))
+                                .frame(width: 38, height: 38)
+                            Text(String(customer.name.prefix(1)).uppercased())
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(amber)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(customer.name)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                            if !customer.phone.isEmpty {
+                                Text(customer.phone)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Müşteri ara...")
+            .navigationTitle("Müşteri Seç")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("İptal") { dismiss() }
+                }
+            }
+        }
     }
 }
 

@@ -272,6 +272,9 @@ struct MaterialListView: View {
             settings: persistence.settings
         )
         quote.items = [item]
+        var updatedSettings = persistence.settings
+        updatedSettings.nextQuoteNumber += 1
+        persistence.saveSettings(updatedSettings)
         return quote
     }
 

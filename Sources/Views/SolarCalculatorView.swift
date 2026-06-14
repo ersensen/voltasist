@@ -76,7 +76,7 @@ struct SolarCalculatorView: View {
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAlert) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Solar sistem kalemleri yeni teklife eklendi.")
+            Text("Teklif sekmesine eklendi, görmek için Dashboard > Teklifler'e gidin.")
         }
     }
 

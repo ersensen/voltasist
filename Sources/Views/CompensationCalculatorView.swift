@@ -211,46 +211,50 @@ struct CompensationCalculatorView: View {
 
     private var cosPhiGauge: some View {
         let cosPhi = currentCosPhi
-        let isGood = cosPhi >= 0.95
+        let isGood   = cosPhi >= 0.95
         let isMedium = cosPhi >= 0.85
+        let gaugeColor: Color = isGood ? .green : isMedium ? .orange : .red
 
-        return VStack(spacing: 12) {
+        return VStack(spacing: 0) {
             HStack {
                 Image(systemName: "gauge.medium").foregroundStyle(amber)
                 Text("Mevcut cos φ").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
             }
+            .padding(.bottom, 12)
 
+            // Üst yarım daire gauge — Circle().trim ile çizilir, üst üste binme olmaz
             ZStack {
-                // Arka plan arc
-                Arc(startAngle: .degrees(180), endAngle: .degrees(360))
-                    .stroke(Color.white.opacity(0.08), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                // Arka plan yolu (sol→üst→sağ)
+                Circle()
+                    .trim(from: 0.5, to: 1.0)
+                    .stroke(Color.white.opacity(0.08),
+                            style: StrokeStyle(lineWidth: 20, lineCap: .round))
 
-                // Dolu arc
-                Arc(startAngle: .degrees(180), endAngle: .degrees(180 + cosPhi * 180))
-                    .stroke(
-                        isGood ? Color.green : isMedium ? Color.orange : Color.red,
-                        style: StrokeStyle(lineWidth: 18, lineCap: .round)
-                    )
-                    .shadow(color: (isGood ? Color.green : isMedium ? Color.orange : Color.red).opacity(0.5), radius: 8)
+                // Değer dolgusu
+                Circle()
+                    .trim(from: 0.5, to: 0.5 + cosPhi * 0.5)
+                    .stroke(gaugeColor,
+                            style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                    .shadow(color: gaugeColor.opacity(0.5), radius: 8)
                     .animation(.spring(response: 0.6, dampingFraction: 0.8), value: cosPhi)
 
+                // Değer metni — ZStack merkezinin altına kaydırılmış (yay çakışmaz)
                 VStack(spacing: 4) {
                     Text(String(format: "%.3f", cosPhi))
                         .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .foregroundStyle(isGood ? Color.green : isMedium ? Color.orange : Color.red)
-                        .shadow(color: (isGood ? Color.green : isMedium ? Color.orange : Color.red).opacity(0.4), radius: 8)
+                        .foregroundStyle(gaugeColor)
+                        .shadow(color: gaugeColor.opacity(0.4), radius: 8)
                     Text(isGood ? "✅ İyi" : isMedium ? "⚠️ Orta" : "❌ Yetersiz")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(isGood ? Color.green : isMedium ? Color.orange : Color.red)
+                        .foregroundStyle(gaugeColor)
                 }
-                .offset(y: 20)
+                .offset(y: 40)
             }
-            .frame(height: 140)
-            .padding(.vertical, 8)
+            .frame(height: 160)
         }
         .padding(18)
-        .glassCard(borderColor: (isGood ? Color.green : Color.red).opacity(0.35))
+        .glassCard(borderColor: gaugeColor.opacity(0.35))
     }
 
     private var penaltyCard: some View {
@@ -306,6 +310,12 @@ struct CompensationCalculatorView: View {
             .padding(18)
             .glassCard(borderColor: Color.orange.opacity(0.4))
 
+            // Kondansatör gruplama
+            capacitorGroupingCard
+
+            // Piyasa hazır step paketleri
+            marketStepPackagesCard
+
             // Standart basamaklar
             standardStepsCard
 
@@ -315,6 +325,111 @@ struct CompensationCalculatorView: View {
             // Tip önerisi
             compensationTypeCard
         }
+    }
+
+    // Hesaplanan toplam kVAr'a göre kondansatör adedi ve boyutu
+    private var capacitorGroupingCard: some View {
+        let steps: [Double] = [5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60]
+        let selected = nearestSteps(total: requiredQcKVAr, options: steps)
+        var countByStep: [Double: Int] = [:]
+        for s in selected { countByStep[s, default: 0] += 1 }
+        let grouped = countByStep.sorted { $0.key > $1.key }
+        let totalInstalled = grouped.reduce(0.0) { $0 + $1.key * Double($1.value) }
+
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "square.grid.2x2.fill").foregroundStyle(Color.purple)
+                Text("Kondansatör Gruplama")
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Text(String(format: "%.1f kVAr kurulu", totalInstalled))
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+            }
+
+            if grouped.isEmpty {
+                Text("Kompanzasyon gerekmez — cos φ yeterli")
+                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
+            } else {
+                ForEach(grouped, id: \.key) { pair in
+                    HStack(spacing: 12) {
+                        Text("\(pair.value) adet")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill(Color.purple))
+                        Text("×")
+                            .font(.system(size: 14, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+                        Text(String(format: "%.0f kVAr", pair.key))
+                            .font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                        Spacer()
+                        Text(String(format: "= %.0f kVAr", pair.key * Double(pair.value)))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.purple.opacity(0.85))
+                    }
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.purple.opacity(0.08))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.2), lineWidth: 1))
+                    )
+                }
+            }
+        }
+        .padding(18)
+        .glassCard(borderColor: Color.purple.opacity(0.35))
+    }
+
+    // Piyasada hazır satılan 25 / 50 / 75 / 100 kVAr step paket seçenekleri
+    private var marketStepPackagesCard: some View {
+        let marketSteps: [Double] = [25, 50, 75, 100]
+
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "cart.fill").foregroundStyle(amber)
+                Text("Piyasa Hazır Step Paketleri")
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            Text(String(format: "%.1f kVAr için kademe seçenekleri", requiredQcKVAr))
+                .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ForEach(marketSteps, id: \.self) { step in
+                let count = requiredQcKVAr > 0 ? max(1, Int(ceil(requiredQcKVAr / step))) : 0
+                let total = Double(count) * step
+                let excess = total - requiredQcKVAr
+                HStack(spacing: 10) {
+                    Text(String(format: "%.0f kVAr", step))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(amber)
+                        .frame(width: 64, alignment: .leading)
+                    Text("→")
+                        .foregroundStyle(.gray.opacity(0.4))
+                    Text("\(count) kademe")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(String(format: "%.0f kVAr", total))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(excess < 0.01 ? Color.green : Color.orange)
+                        if excess > 0.01 {
+                            Text(String(format: "+%.0f kVAr fazla", excess))
+                                .font(.system(size: 10, design: .rounded))
+                                .foregroundStyle(.gray.opacity(0.5))
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(amber.opacity(0.06))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(amber.opacity(0.2), lineWidth: 1))
+                )
+            }
+        }
+        .padding(18)
+        .glassCard(borderColor: amber.opacity(0.3))
     }
 
     private var standardStepsCard: some View {

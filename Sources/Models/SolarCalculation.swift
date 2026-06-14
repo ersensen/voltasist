@@ -24,6 +24,14 @@ enum SolarSystemType: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    var shortName: String {
+        switch self {
+        case .onGrid:  return "On-Grid"
+        case .offGrid: return "Off-Grid"
+        case .hybrid:  return "Hibrit"
+        }
+    }
+
     var description: String {
         switch self {
         case .onGrid:
@@ -152,7 +160,7 @@ struct SolarCalculationInput: Codable {
         autonomyDays: Double = 2.0,
         batteryType: BatteryType = .lifepo4,
         systemVoltage: Int = 48,
-        feedInTariff: Double = 3.10,
+        feedInTariff: Double = 1.15,
         electricityPrice: Double = 4.50,
         installationCostPerKWp: Double = 25_000.0
     ) {

@@ -16,7 +16,6 @@ struct SolarCalculatorView: View {
     @StateObject private var vm = SolarCalculatorViewModel()
     @EnvironmentObject private var persistence: PersistenceService
     @State private var showCityPicker = false
-    @State private var addedToQuote  = false
     @State private var showQuoteAlert = false
 
     // MARK: State — Panel Gücü (Wp) — malzeme listesi için kullanıcı tarafından değiştirilebilir
@@ -26,13 +25,16 @@ struct SolarCalculatorView: View {
     @State private var pricePanel       : Double = 2_200    // 400Wp monokristalin panel
     @State private var priceInverter    : Double = 22_000   // inverter (tam ünite, 5kW ref.)
     @State private var priceBattery     : Double = 10_500   // 100Ah/12V LiFePO4 batarya
+    @State private var priceMPPT        : Double = 8_500    // MPPT şarj regülatörü
     @State private var priceMountRail   : Double = 280      // montaj sacı + alüm. ray (panel/set)
     @State private var priceDCCable     : Double = 32       // DC solar kablo PV1-F 4mm² (₺/m)
     @State private var priceACCable     : Double = 65       // AC kablo NYY 3×4mm² (₺/m)
+    @State private var acCableLengthM   : Double = 20       // AC kablo uzunluğu (m, sahada değiştir)
     @State private var priceFuse        : Double = 160      // DC string sigorta + tutucu (adet)
     @State private var priceGrounding   : Double = 1_800    // topraklama seti (set)
     @State private var priceRoofHook    : Double = 130      // çatı kancası alüm. (adet)
     @State private var priceJunctionBox : Double = 550      // junction box / DC combiner (adet)
+    @State private var priceLabor       : Double = 0        // kurulum işçiliği (toplam tutar, sahada gir)
 
     // Amber-Solar renk sistemi
     private let sunGold   = Color(red: 1.0,  green: 0.80, blue: 0.10)
@@ -227,7 +229,7 @@ struct SolarCalculatorView: View {
                     .foregroundColor(.gray)
                 Picker("", selection: $vm.input.systemType) {
                     ForEach(SolarSystemType.allCases) { type in
-                        Text(type.rawValue).tag(type)
+                        Text(type.shortName).tag(type)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -240,41 +242,44 @@ struct SolarCalculatorView: View {
                 }
             }
 
-            // Eğim ve Yön (yan yana)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Eğim (°)")
+            // Eğim
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) {
+                    Text("Çatı Eğimi")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.gray)
-                    HStack {
-                        TextField("30", value: $vm.input.roofTiltDeg, format: .number)
-                            .keyboardType(.decimalPad)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        Text("°")
-                            .foregroundColor(.gray)
-                    }
-                    .padding(12)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(10)
+                    Text("(0°=düz, 90°=dik)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray.opacity(0.5))
                 }
+                HStack {
+                    TextField("30", value: $vm.input.roofTiltDeg, format: .number)
+                        .keyboardType(.decimalPad)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Text("°")
+                        .foregroundColor(.gray)
+                }
+                .padding(12)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(10)
+            }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Yön (°)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.gray)
-                    HStack {
-                        TextField("0", value: $vm.input.roofOrientationDeg, format: .number)
-                            .keyboardType(.decimalPad)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        Text("°")
-                            .foregroundColor(.gray)
-                    }
-                    .padding(12)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(10)
+            // Yön — segmented picker
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Çatı Yönü")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.gray)
+                Picker("", selection: $vm.input.roofOrientationDeg) {
+                    Text("Güney").tag(0.0)
+                    Text("Doğu").tag(-90.0)
+                    Text("Batı").tag(90.0)
+                    Text("Kuzey").tag(180.0)
                 }
+                .pickerStyle(.segmented)
+                Text("Güney = en yüksek verim")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray.opacity(0.5))
             }
 
             // Off-Grid / Hibrit ek parametreler
@@ -342,6 +347,20 @@ struct SolarCalculatorView: View {
                     }
                     .padding(.horizontal, 4)
                 }
+
+                if vm.input.systemVoltage == 12 {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.orange)
+                            .padding(.top, 1)
+                        Text("12V sistemler küçük kurulumlar içindir (≤1 kWp). Büyük sistemler için 48V önerilir.")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(.orange.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 4)
+                }
             }
 
             Divider().background(Color.white.opacity(0.1))
@@ -352,7 +371,7 @@ struct SolarCalculatorView: View {
                 currencyField(title: "Kurulum (₺/kWp)", value: $vm.input.installationCostPerKWp)
             }
             if vm.input.systemType != .offGrid {
-                currencyField(title: "Net Metering (₺/kWh)", value: $vm.input.feedInTariff)
+                currencyField(title: "Net Metering ₺/kWh (YEKDEM)", value: $vm.input.feedInTariff)
             }
         }
         .padding(16)
@@ -596,19 +615,21 @@ struct SolarCalculatorView: View {
         let batQty    = Double(result.batteryCount)
         let dcCableM  = panelQty * 10                    // panel başına ~10m DC kablo
         let hookQty   = panelQty * 4                     // panel başına 4 kanca
-        let fuseQty   = Double(max(1, derivedCount / 4))
+        let fuseQty   = Double(max(1, Int(ceil(Double(derivedCount) / 8.0))))  // 8 panel = 1 string = 1 sigorta
         let jboxQty   = Double(max(1, Int(ceil(panelQty / 8))))
 
         let grandTotal = panelQty  * pricePanel
                        + 1         * priceInverter
                        + batQty    * priceBattery
+                       + (result.batteryCount > 0 ? priceMPPT : 0)
                        + panelQty  * priceMountRail
                        + dcCableM  * priceDCCable
-                       + 20        * priceACCable
+                       + acCableLengthM * priceACCable
                        + fuseQty   * priceFuse
                        + 1         * priceGrounding
                        + hookQty   * priceRoofHook
                        + jboxQty   * priceJunctionBox
+                       + priceLabor
 
         return VStack(alignment: .leading, spacing: 0) {
             // Başlık
@@ -676,6 +697,10 @@ struct SolarCalculatorView: View {
                     name: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
                     qty: batQty, unit: "adet", price: $priceBattery
                 )
+                materialPriceRow(
+                    name: "MPPT Şarj Regülatörü \(String(format: "%.0f", result.chargeCurrentA))A",
+                    qty: 1, unit: "adet", price: $priceMPPT
+                )
             }
             materialPriceRow(
                 name: "Montaj Sacı + Alüminyum Ray",
@@ -685,9 +710,9 @@ struct SolarCalculatorView: View {
                 name: "DC Solar Kablo (PV1-F 4mm²)",
                 qty: dcCableM, unit: "m", price: $priceDCCable
             )
-            materialPriceRow(
+            materialPriceRowEditable(
                 name: "AC Kablo (NYY 3×4mm²)",
-                qty: 20, unit: "m", price: $priceACCable
+                qty: $acCableLengthM, unit: "m", price: $priceACCable
             )
             materialPriceRow(
                 name: "DC String Sigorta + Tutucu",
@@ -705,6 +730,10 @@ struct SolarCalculatorView: View {
                 name: "Junction Box / DC Combiner",
                 qty: jboxQty, unit: "adet", price: $priceJunctionBox
             )
+            materialPriceRow(
+                name: "GES Kurulum İşçiliği",
+                qty: 1, unit: "iş", price: $priceLabor
+            )
 
             Divider().background(sunGold.opacity(0.35)).padding(.vertical, 8)
 
@@ -713,7 +742,7 @@ struct SolarCalculatorView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("GENEL TOPLAM")
                         .font(.system(size: 12, weight: .black, design: .rounded)).foregroundColor(.white)
-                    Text("Malzeme • KDV dahil • İşçilik hariç")
+                    Text("KDV dahil • İşçiliği girmezseniz 0₺ sayılır")
                         .font(.system(size: 10)).foregroundColor(.gray.opacity(0.5))
                 }
                 Spacer()
@@ -767,6 +796,57 @@ struct SolarCalculatorView: View {
 
                 // Satır toplamı
                 Text(formatTL(qty * price.wrappedValue))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 80, alignment: .trailing)
+            }
+            Divider().background(Color.white.opacity(0.06)).padding(.top, 8)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func materialPriceRowEditable(name: String, qty: Binding<Double>, unit: String, price: Binding<Double>) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.88))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 3) {
+                        TextField("0", value: qty, format: .number.precision(.fractionLength(0)))
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(sunGold)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 38)
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(4)
+                        Text(unit)
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundColor(.gray.opacity(0.55))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    TextField("0", value: price, format: .number)
+                        .keyboardType(.decimalPad)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(sunGold)
+                        .multilineTextAlignment(.trailing)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(6)
+                        .frame(width: 80)
+                    Text("₺ / \(unit)")
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundColor(.gray.opacity(0.4))
+                }
+                .frame(width: 90, alignment: .trailing)
+
+                Text(formatTL(qty.wrappedValue * price.wrappedValue))
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(width: 80, alignment: .trailing)

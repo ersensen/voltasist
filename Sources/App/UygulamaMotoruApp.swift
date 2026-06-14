@@ -13,22 +13,14 @@ public struct UygulamaMotoruApp: App {
 
     /// Uygulama geneli veri katmanı — ObservableObject singleton
     @StateObject private var persistence = PersistenceService.shared
-    /// Kimlik doğrulama durumu — App seviyesinde tek kaynak
-    @StateObject private var authVM = LoginViewModel()
 
     public init() {}
 
     public var body: some Scene {
         WindowGroup {
-            if authVM.isAuthenticated {
-                MainTabView()
-                    .environmentObject(persistence)
-                    .preferredColorScheme(.dark)
-            } else {
-                LoginView()
-                    .environmentObject(authVM)
-                    .preferredColorScheme(.dark)
-            }
+            MainTabView()
+                .environmentObject(persistence)
+                .preferredColorScheme(.dark)
         }
     }
 }

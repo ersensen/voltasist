@@ -1,106 +1,180 @@
 // CompensationCalculatorView.swift
-// VoltAsist
-//
-// 7 sekmeli reaktif güç kompanzasyonu hesaplama ekranı.
-// Mevcut durum, kondansatör, AKP, harmonik, transformatör, ekonomi ve rapor sekmeleri.
+// VoltAsist — Saha elektrikçisi için reaktif güç kompanzasyonu hesaplama ekranı.
 
 import SwiftUI
 import Charts
 
-// MARK: - Kompanzasyon Sekmeleri
+// MARK: - Yardımcı Enumlar
 
-enum CompTab: Int, CaseIterable {
-    case current      = 0
-    case capacitor    = 1
-    case akp          = 2
-    case harmonic     = 3
-    case transformer  = 4
-    case economy      = 5
-    case report       = 6
+enum InputMode: CaseIterable, Hashable {
+    case instant, invoice
+    var label: String { self == .instant ? "Anlık Ölçüm" : "Fatura/Sayaç" }
+    var icon:  String { self == .instant ? "gauge.medium"  : "doc.text.fill" }
+}
 
-    var title: String {
-        switch self {
-        case .current:     return "Durum"
-        case .capacitor:   return "Kondansatör"
-        case .akp:         return "AKP"
-        case .harmonic:    return "Harmonik"
-        case .transformer: return "Trafo"
-        case .economy:     return "Ekonomi"
-        case .report:      return "Rapor"
-        }
+enum FacilityType: CaseIterable, Hashable {
+    case office, industrial, mixed
+    var label: String {
+        switch self { case .office: return "Ofis/Ticari"; case .industrial: return "Sanayi"; case .mixed: return "Karma" }
     }
-
     var icon: String {
+        switch self { case .office: return "building.2.fill"; case .industrial: return "gear.badge.fill"; case .mixed: return "building.columns.fill" }
+    }
+    var defaultMethod: CompMethod {
+        switch self { case .office: return .central; case .industrial: return .group; case .mixed: return .central }
+    }
+    var defaultStepCount: Int {
+        switch self { case .office: return 6; case .industrial: return 12; case .mixed: return 8 }
+    }
+    var note: String {
         switch self {
-        case .current:     return "gauge.medium"
-        case .capacitor:   return "cylinder.split.1x2.fill"
-        case .akp:         return "square.grid.2x2.fill"
-        case .harmonic:    return "waveform.path.ecg"
-        case .transformer: return "arrow.triangle.2.circlepath"
-        case .economy:     return "chart.line.uptrend.xyaxis"
-        case .report:      return "doc.text.fill"
+        case .office:      return "Sabit veya yavaş değişen yük. Merkezi AKP genellikle yeterli."
+        case .industrial:  return "Değişken/darbeli yükler. Grup veya münferit kompanzasyon önerilir."
+        case .mixed:       return "Karma yük profili. Merkezi AKP + kritik noktalara sabit kondansatör."
         }
     }
 }
 
-// MARK: - CompensationCalculatorView
+enum CompMethod: CaseIterable, Hashable {
+    case central, group, individual
+    var label: String {
+        switch self { case .central: return "Merkezi"; case .group: return "Grup"; case .individual: return "Münferit" }
+    }
+    var icon: String {
+        switch self { case .central: return "square.fill"; case .group: return "square.grid.2x2.fill"; case .individual: return "cpu.fill" }
+    }
+    var description: String {
+        switch self {
+        case .central:    return "Trafo çıkışında tek AKP. Trafoyu korur, hat kayıplarını azaltmaz."
+        case .group:      return "MCC/dağıtım tablolarında. Hat kayıplarını önemli ölçüde azaltır."
+        case .individual: return "Her yükün başında sabit kondansatör. En etkili, maliyetçe yüksek."
+        }
+    }
+}
 
-/// Kompanzasyon hesap ekranı — 7 sekme
+enum LoadProfile: CaseIterable, Hashable {
+    case stable, variable, pulsed
+    var label: String {
+        switch self { case .stable: return "Sabit"; case .variable: return "Değişken"; case .pulsed: return "Darbeli" }
+    }
+    var icon: String {
+        switch self { case .stable: return "minus.circle.fill"; case .variable: return "waveform"; case .pulsed: return "bolt.fill" }
+    }
+    var note: String {
+        switch self {
+        case .stable:   return "Sabit yük: az kademe yeterli, minimum adım esnek."
+        case .variable: return "Değişken yük: küçük ve çok sayıda kademe önerilir."
+        case .pulsed:   return "Darbeli yük (kaynak/vinç): hızlı kontaktör + reaktör zorunlu."
+        }
+    }
+    var suggestedMinSteps: Int {
+        switch self { case .stable: return 4; case .variable: return 8; case .pulsed: return 12 }
+    }
+    var forceReactor: Bool { self == .pulsed }
+}
+
+// MARK: - Sekme
+
+enum CompTab: Int, CaseIterable {
+    case input = 0, steps, field, harmonic, economy, report
+    var title: String {
+        switch self {
+        case .input:    return "Giriş"
+        case .steps:    return "Kademe"
+        case .field:    return "Saha"
+        case .harmonic: return "Harmonik"
+        case .economy:  return "Ekonomi"
+        case .report:   return "Rapor"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .input:    return "slider.horizontal.3"
+        case .steps:    return "square.grid.2x2.fill"
+        case .field:    return "antenna.radiowaves.left.and.right"
+        case .harmonic: return "waveform.path.ecg"
+        case .economy:  return "chart.line.uptrend.xyaxis"
+        case .report:   return "doc.text.fill"
+        }
+    }
+}
+
+// MARK: - Ana View
+
 struct CompensationCalculatorView: View {
 
     @EnvironmentObject private var persistence: PersistenceService
 
-    // MARK: State — Sekme
-    @State private var selectedTab: CompTab = .current
-    @State private var showQuoteAdded = false
+    // Sekme
+    @State private var selectedTab: CompTab = .input
+
+    // Giriş modu
+    @State private var inputMode:    InputMode    = .instant
+    @State private var facilityType: FacilityType = .industrial
+    @State private var compMethod:   CompMethod   = .group
+    @State private var loadProfile:  LoadProfile  = .variable
+
+    // Anlık ölçüm
+    @State private var activePowerKW:   String = "100"
+    @State private var apparentPowerKVA: String = "140"
+    @State private var useDirectCosPhi: Bool   = false
+    @State private var directCosPhiStr: String = "0.714"
+
+    // Fatura / Sayaç
+    @State private var monthlyKWh:      String = "72000"
+    @State private var monthlyKVArhInd: String = "35000"
+    @State private var monthlyKVArhCap: String = "0"
+
+    // Pik / ortalama
+    @State private var usePeakMode:      Bool   = false
+    @State private var peakActivePowerKW: String = "150"
+    @State private var peakApparentKVA:  String = "210"
+
+    // Sistem
+    @State private var targetCosPhi:  Double = 0.95
+    @State private var systemVoltage: String = "400"
+    @State private var frequency:     Double = 50.0
+    @State private var transformerKVA: String = "250"
+    @State private var penaltyRate:   Double = 0.40
+
+    // Harmonik
+    @State private var thdPercent: Double = 10.0
+    @State private var thdText:    String = "10.0"
+
+    // Kademe
+    @State private var stepCountOption: Int = 8
+
+    // Yatırım kalemleri
+    @State private var capCostStr:       String = ""
+    @State private var contactorCostStr: String = ""
+    @State private var reactorCostStr:   String = ""
+    @State private var panelCostStr:     String = ""
+    @State private var laborCostStr:     String = ""
+
+    // Quote
+    @State private var showQuoteAdded:   Bool = false
     @State private var pendingQuoteItems: [QuoteItem] = []
-    @State private var showCustomerPicker = false
+    @State private var showCustomerPicker: Bool = false
 
-    // MARK: State — Ortak Parametreler
-    @State private var activePowerKW: String     = "100"
-    @State private var apparentPowerKVA: String  = "140"
-    @State private var targetCosPhi: Double      = 0.95
-    @State private var systemVoltage: String     = "400"
-    @State private var frequency: Double         = 50.0
+    // Hesaplanan
+    @State private var computedCosPhi:      Double = 100.0 / 140.0
+    @State private var computedQcKVAr:      Double = 0.0
+    @State private var computedMonthlySaving: Double = 0.0
 
-    // MARK: State — Ekonomi
-    @State private var investmentCost: String    = "25000"
-    @State private var penaltyRate: Double       = 0.40    // TL/kVAr
-
-    // MARK: State — Harmonik
-    @State private var thdPercent: Double        = 10.0
-
-    // MARK: State — Transformatör
-    @State private var transformerKVA: String    = "250"
-
-    // MARK: State — Hesaplanan (paylaşılan)
-    @State private var currentCosPhi: Double     = 100.0 / 140.0
-    @State private var requiredQcKVAr: Double    = 0.0
-    @State private var monthlySaving: Double     = 0.0
-
-    // MARK: State — THD Giriş
-    @State private var thdText: String           = "10.0"
-
-    // MARK: State — Kademe Gruplama
-    @State private var stepCountStr: String      = "12"
-
-    // MARK: Tasarım
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
 
     // MARK: Body
+
     var body: some View {
         VStack(spacing: 0) {
-            // Tab seçici
             compTabSelector
-
-            // İçerik
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     tabContent
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 28)
                 }
             }
             .scrollDismissesKeyboard(.immediately)
@@ -114,10 +188,21 @@ struct CompensationCalculatorView: View {
         .onChange(of: systemVoltage)    { _, _ in recalculate() }
         .onChange(of: thdPercent)       { _, _ in recalculate() }
         .onChange(of: transformerKVA)   { _, _ in recalculate() }
+        .onChange(of: inputMode)        { _, _ in recalculate() }
+        .onChange(of: monthlyKWh)       { _, _ in recalculate() }
+        .onChange(of: monthlyKVArhInd)  { _, _ in recalculate() }
+        .onChange(of: monthlyKVArhCap)  { _, _ in recalculate() }
+        .onChange(of: useDirectCosPhi)  { _, _ in recalculate() }
+        .onChange(of: directCosPhiStr)  { _, _ in recalculate() }
+        .onChange(of: facilityType) { _, nv in
+            compMethod      = nv.defaultMethod
+            stepCountOption = nv.defaultStepCount
+            recalculate()
+        }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
-            Text("Müşteri teklifine eklendi. Teklif sekmesinden görüntüleyebilirsiniz.")
+            Text("Müşteri teklifine eklendi.")
         }
         .sheet(isPresented: $showCustomerPicker) {
             CustomerPickerView { customer in
@@ -138,210 +223,262 @@ struct CompensationCalculatorView: View {
                     compTabButton(tab)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 14).padding(.vertical, 10)
         }
         .background(Color(red: 0.06, green: 0.06, blue: 0.09))
     }
 
-    @ViewBuilder
     private func compTabButton(_ tab: CompTab) -> some View {
         let isSelected = selectedTab == tab
-        Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
-                selectedTab = tab
-            }
+        return Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) { selectedTab = tab }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(tab.title)
-                    .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
+                Image(systemName: tab.icon).font(.system(size: 11, weight: .semibold))
+                Text(tab.title).font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
             }
             .foregroundStyle(isSelected ? Color.black : Color.gray.opacity(0.65))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                Capsule()
-                    .fill(isSelected ? Color.purple : Color(red: 0.15, green: 0.15, blue: 0.18))
-                    .shadow(color: isSelected ? Color.purple.opacity(0.4) : .clear, radius: 6)
-            )
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Capsule()
+                .fill(isSelected ? Color.purple : Color(red: 0.15, green: 0.15, blue: 0.18))
+                .shadow(color: isSelected ? Color.purple.opacity(0.4) : .clear, radius: 6))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Tab İçeriği
-
     @ViewBuilder
     private var tabContent: some View {
         switch selectedTab {
-        case .current:     currentStatusTab
-        case .capacitor:   capacitorTab
-        case .akp:         akpTab
-        case .harmonic:    harmonicTab
-        case .transformer: transformerTab
-        case .economy:     economyTab
-        case .report:      reportTab
+        case .input:    inputTab
+        case .steps:    stepsTab
+        case .field:    fieldTab
+        case .harmonic: harmonicTab
+        case .economy:  economyTab
+        case .report:   reportTab
         }
     }
 
-    // MARK: ── SEKME 1: Mevcut Durum ──
+    // MARK: ── TAB 1: GİRİŞ ──
 
-    private var currentStatusTab: some View {
+    private var inputTab: some View {
         VStack(spacing: 16) {
-            // Kullanım talimatı
-            usageNoteCard
-
-            // Güç girişleri
-            VStack(spacing: 14) {
-                HStack {
-                    Image(systemName: "bolt.fill").foregroundStyle(amber)
-                    Text("Mevcut Yük Durumu")
-                        .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                .padding(.bottom, 4)
-
-                inputFieldRow(label: "Aktif Güç (kW)", binding: $activePowerKW, keyboard: .numberPad)
-                Divider().background(amber.opacity(0.15))
-                inputFieldRow(label: "Görünür Güç (kVA)", binding: $apparentPowerKVA, keyboard: .numberPad)
-            }
-            .padding(18)
-            .glassCard(borderColor: amber.opacity(0.3))
-
-            // cos φ gauge animasyonu
-            cosPhiGauge
-
-            // TEDAŞ ceza kartı
-            penaltyCard
-
-            // Hedef cos φ
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("🎯 Hedef cos φ")
-                        .font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.8))
-                    Spacer()
-                    Text(String(format: "%.2f", targetCosPhi))
-                        .font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Color.green)
-                }
-                Slider(value: $targetCosPhi, in: 0.90...1.0, step: 0.01)
-                    .tint(Color.green)
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.green.opacity(0.3))
-
-            // Hap Bilgiler
-            hapBilgilerSection
+            inputModeCard
+            facilityTypeCard
+            compMethodCard
+            loadProfileCard
+            if inputMode == .instant { instantMeasurementCard } else { invoiceMeasurementCard }
+            systemParametersCard
+            cosPhiResultCard
+            penaltyResultCard
         }
     }
 
-    private var usageNoteCard: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle.fill")
-                .foregroundStyle(amber)
-                .font(.system(size: 16))
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Nasıl Kullanılır?")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(amber)
-                Text("Aktif güç (kW) ve görünür güç (kVA) değerlerini girin. cos φ, gerekli Qc kapasitesi ve TEDAŞ ceza tahmini otomatik hesaplanır. Diğer sekmelerde kondansatör seçimi, AKP panel önerisi ve ekonomik analiz bulunur.")
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.65))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(amber.opacity(0.07))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(amber.opacity(0.22), lineWidth: 1))
-        )
-    }
-
-    private var hapBilgilerSection: some View {
+    private var inputModeCard: some View {
         VStack(spacing: 10) {
             HStack {
-                Image(systemName: "lightbulb.fill").foregroundStyle(amber)
-                Text("Hap Bilgiler")
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Image(systemName: "slider.horizontal.3").foregroundStyle(amber)
+                Text("Giriş Modu").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
-                Text("6 kart")
-                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
             }
-            .padding(.bottom, 2)
-
-            hapCard(
-                icon: "bolt.circle.fill", color: .yellow,
-                title: "cos φ Nedir?",
-                body: "Aktif güç (kW) ile görünür güç (kVA) arasındaki oran. cos φ = P / S formülüyle hesaplanır. 1.0 ideal, 0.95 TEDAŞ sınırı, 0.85 altı kritik durum."
-            )
-            hapCard(
-                icon: "exclamationmark.triangle.fill", color: .orange,
-                title: "Neden Önemli?",
-                body: "Düşük cos φ; kablolarda gereksiz ısınmaya, transformatör kapasitesinin azalmasına ve iletim kayıplarının artmasına yol açar. Sisteminiz olduğundan daha büyük boyutlandırılmak zorunda kalır."
-            )
-            hapCard(
-                icon: "banknote.fill", color: .red,
-                title: "TEDAŞ Ceza Sınırı",
-                body: "cos φ < 0.95 durumunda TEDAŞ reaktif enerji bedeli tahakkuk ettirir. 2024 tarifesi ~0.40 ₺/kVArh. Gece 22:00–06:00 arasında çekilen reaktif güç 2 kat fiyatlandırılır."
-            )
-            hapCard(
-                icon: "waveform.path.ecg", color: .purple,
-                title: "Reaktif Güç Zararları",
-                body: "Reaktif akım I² × R ile hat kayıplarını doğrudan artırır. Kablolar erken yaşlanır, trafo nötr akımı yükselir, kesiciler yanlış boyutlandırılır ve genel verim düşer."
-            )
-            hapCard(
-                icon: "cylinder.split.1x2.fill", color: .cyan,
-                title: "Kondansatör Ömrü",
-                body: "Kaliteli MKP (metalik polipropilen) kondansatör 10–15 yıl dayanabilir. 40°C üzerinde her 10°C sıcaklık artışı ömrü yarıya indirir. İyi havalandırma kritik önem taşır."
-            )
-            hapCard(
-                icon: "wrench.and.screwdriver.fill", color: .green,
-                title: "Bakım Tavsiyeleri",
-                body: "Her 6 ayda bir terminal sıkılığı ve korozyon kontrolü yapın. Yılda bir kapasite ölçümü (%80 altına düşmüş kondansatörü değiştirin). Harmonik sorunları için THD analizi izleyin."
-            )
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(red: 0.10, green: 0.10, blue: 0.13))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.18), lineWidth: 1))
-        )
-    }
-
-    private func hapCard(icon: String, color: Color, title: String, body: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(color)
-                .frame(width: 24)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text(body)
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.60))
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                ForEach(InputMode.allCases, id: \.self) { mode in
+                    Button { withAnimation { inputMode = mode } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: mode.icon).font(.system(size: 13))
+                            Text(mode.label).font(.system(size: 13, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(inputMode == mode ? .black : .gray)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10)
+                            .fill(inputMode == mode ? amber : Color.white.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(color.opacity(0.07))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.2), lineWidth: 1))
-        )
+        .padding(16).glassCard(borderColor: amber.opacity(0.3))
     }
 
-    private var cosPhiGauge: some View {
-        let cosPhi = currentCosPhi
-        let isGood   = cosPhi >= 0.95
-        let isMedium = cosPhi >= 0.85
-        let gaugeColor: Color = isGood ? .green : isMedium ? .orange : .red
+    private var facilityTypeCard: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "building.2.fill").foregroundStyle(Color.cyan)
+                Text("Tesis Türü").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            HStack(spacing: 6) {
+                ForEach(FacilityType.allCases, id: \.self) { ft in
+                    Button { withAnimation { facilityType = ft } } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: ft.icon).font(.system(size: 18))
+                            Text(ft.label).font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(facilityType == ft ? .black : .gray)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10)
+                            .fill(facilityType == ft ? Color.cyan : Color.white.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle").font(.system(size: 12)).foregroundStyle(Color.cyan.opacity(0.7))
+                Text(facilityType.note).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.cyan.opacity(0.25))
+    }
 
+    private var compMethodCard: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "square.grid.2x2.fill").foregroundStyle(Color.purple)
+                Text("Kompanzasyon Yöntemi").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Text("Önerilen: \(facilityType.defaultMethod.label)")
+                    .font(.system(size: 10, design: .rounded)).foregroundStyle(Color.purple.opacity(0.7))
+            }
+            HStack(spacing: 6) {
+                ForEach(CompMethod.allCases, id: \.self) { m in
+                    Button { withAnimation { compMethod = m } } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: m.icon).font(.system(size: 16))
+                            Text(m.label).font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(compMethod == m ? .black : .gray)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10)
+                            .fill(compMethod == m ? Color.purple : Color.white.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(compMethod.description).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(16).glassCard(borderColor: Color.purple.opacity(0.25))
+    }
+
+    private var loadProfileCard: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "waveform").foregroundStyle(Color.orange)
+                Text("Yük Profili").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            HStack(spacing: 6) {
+                ForEach(LoadProfile.allCases, id: \.self) { lp in
+                    Button { withAnimation { loadProfile = lp } } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: lp.icon).font(.system(size: 16))
+                            Text(lp.label).font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(loadProfile == lp ? .black : .gray)
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 10)
+                            .fill(loadProfile == lp ? Color.orange : Color.white.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: loadProfile == .pulsed ? "exclamationmark.triangle.fill" : "info.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(loadProfile == .pulsed ? Color.orange : Color.gray.opacity(0.6))
+                Text(loadProfile.note).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.orange.opacity(0.25))
+    }
+
+    private var instantMeasurementCard: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "gauge.medium").foregroundStyle(amber)
+                Text("Anlık Ölçüm Değerleri").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            inputFieldRow(label: "Aktif Güç (kW)", binding: $activePowerKW, keyboard: .numberPad)
+            Divider().background(amber.opacity(0.15))
+            inputFieldRow(label: "Görünür Güç (kVA)", binding: $apparentPowerKVA, keyboard: .numberPad)
+            Divider().background(amber.opacity(0.15))
+            Toggle(isOn: $useDirectCosPhi) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Analizörden cos φ gir").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(.white)
+                    Text("Ölçülen değeri doğrudan kullan").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                }
+            }.tint(amber)
+            if useDirectCosPhi {
+                inputFieldRow(label: "cos φ (analizör)", binding: $directCosPhiStr, keyboard: .decimalPad)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(16).glassCard(borderColor: amber.opacity(0.3))
+    }
+
+    private var invoiceMeasurementCard: some View {
+        let (pD, sD, cosD) = invoiceDerivedValues
+        return VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "doc.text.fill").foregroundStyle(Color.cyan)
+                Text("Fatura / Sayaç (Aylık)").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            Text("OSOS veya faturadan aylık değerleri girin. cos φ ve güç otomatik hesaplanır.")
+                .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            inputFieldRow(label: "Aktif Enerji (kWh/ay)", binding: $monthlyKWh, keyboard: .numberPad)
+            Divider().background(Color.cyan.opacity(0.15))
+            inputFieldRow(label: "Endüktif Reaktif (kVArh/ay)", binding: $monthlyKVArhInd, keyboard: .numberPad)
+            Divider().background(Color.cyan.opacity(0.15))
+            inputFieldRow(label: "Kapasitif Reaktif (kVArh/ay)", binding: $monthlyKVArhCap, keyboard: .numberPad)
+            Divider().background(Color.cyan.opacity(0.15))
+            HStack(spacing: 0) {
+                miniMetric("P ort.", String(format: "%.1f kW", pD), .green)
+                miniMetric("S ort.", String(format: "%.1f kVA", sD), amber)
+                miniMetric("cos φ", String(format: "%.3f", cosD), cosD >= 0.95 ? .green : .red)
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.cyan.opacity(0.3))
+    }
+
+    private func miniMetric(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(label).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+            Text(value).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(color)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private var systemParametersCard: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "gearshape.fill").foregroundStyle(.gray)
+                Text("Sistem Parametreleri").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            inputFieldRow(label: "Sistem Gerilimi (V)", binding: $systemVoltage, keyboard: .numberPad)
+            Divider().background(Color.white.opacity(0.07))
+            inputFieldRow(label: "Trafo Gücü (kVA)", binding: $transformerKVA, keyboard: .numberPad)
+            Divider().background(Color.white.opacity(0.07))
+            HStack {
+                Text("Hedef cos φ").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.8))
+                Spacer()
+                Text(String(format: "%.2f", targetCosPhi)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.green)
+            }
+            Slider(value: $targetCosPhi, in: 0.90...1.0, step: 0.01).tint(.green)
+            HStack {
+                Text("Tarife (₺/kVArh)").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.8))
+                Spacer()
+                Text(String(format: "%.2f ₺", penaltyRate)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.red)
+            }
+            Slider(value: $penaltyRate, in: 0.20...1.50, step: 0.05).tint(.red)
+        }
+        .padding(16).glassCard(borderColor: Color.white.opacity(0.1))
+    }
+
+    private var cosPhiResultCard: some View {
+        let cp = computedCosPhi
+        let gc: Color = cp >= 0.95 ? .green : cp >= 0.85 ? .orange : .red
         return VStack(spacing: 0) {
             HStack {
                 Image(systemName: "gauge.medium").foregroundStyle(amber)
@@ -349,994 +486,771 @@ struct CompensationCalculatorView: View {
                 Spacer()
             }
             .padding(.bottom, 12)
-
-            // Üst yarım daire gauge — Circle().trim ile çizilir, üst üste binme olmaz
             ZStack {
-                // Arka plan yolu (sol→üst→sağ)
-                Circle()
-                    .trim(from: 0.5, to: 1.0)
-                    .stroke(Color.white.opacity(0.08),
-                            style: StrokeStyle(lineWidth: 20, lineCap: .round))
-
-                // Değer dolgusu
-                Circle()
-                    .trim(from: 0.5, to: 0.5 + cosPhi * 0.5)
-                    .stroke(gaugeColor,
-                            style: StrokeStyle(lineWidth: 20, lineCap: .round))
-                    .shadow(color: gaugeColor.opacity(0.5), radius: 8)
-                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: cosPhi)
-
-                // Değer metni — ZStack merkezinin altına kaydırılmış (yay çakışmaz)
+                Circle().trim(from: 0.5, to: 1.0)
+                    .stroke(Color.white.opacity(0.08), style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                Circle().trim(from: 0.5, to: 0.5 + cp * 0.5)
+                    .stroke(gc, style: StrokeStyle(lineWidth: 20, lineCap: .round))
+                    .shadow(color: gc.opacity(0.5), radius: 8)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: cp)
                 VStack(spacing: 4) {
-                    Text(String(format: "%.3f", cosPhi))
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .foregroundStyle(gaugeColor)
-                        .shadow(color: gaugeColor.opacity(0.4), radius: 8)
-                    Text(isGood ? "✅ İyi" : isMedium ? "⚠️ Orta" : "❌ Yetersiz")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(gaugeColor)
+                    Text(String(format: "%.3f", cp))
+                        .font(.system(size: 36, weight: .bold, design: .rounded)).foregroundStyle(gc)
+                        .shadow(color: gc.opacity(0.4), radius: 8)
+                    Text(cp >= 0.95 ? "✅ Cezasız" : cp >= 0.85 ? "⚠️ Risk" : "❌ Cezalı")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(gc)
+                    Text(String(format: "Gerekli Qc: %.1f kVAr", computedQcKVAr))
+                        .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
                 }
                 .offset(y: 40)
             }
             .frame(height: 160)
         }
-        .padding(18)
-        .glassCard(borderColor: gaugeColor.opacity(0.35))
+        .padding(18).glassCard(borderColor: gc.opacity(0.35))
     }
 
-    private var penaltyCard: some View {
-        let monthly = requiredQcKVAr > 0 ? requiredQcKVAr * 720 * penaltyRate : 0
-        let yearly  = monthly * 12
-
+    private var penaltyResultCard: some View {
+        let monthly = computedMonthlySaving
         return VStack(spacing: 12) {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-                Text("TEDAŞ Reaktif Enerji Cezası")
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text("TEDAŞ Reaktif Enerji Cezası").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
             }
-
             HStack(spacing: 0) {
-                penaltyCellView(label: "Aylık Ceza", value: monthly.currencyFormatted, color: .red)
+                miniMetric("Aylık Ceza", monthly.currencyFormatted, .red)
                 Divider().background(Color.red.opacity(0.3)).frame(height: 50)
-                penaltyCellView(label: "Yıllık Ceza", value: yearly.currencyFormatted, color: Color(red: 1, green: 0.3, blue: 0.3))
+                miniMetric("Yıllık Ceza", (monthly * 12).currencyFormatted, Color(red: 1, green: 0.35, blue: 0.35))
             }
         }
-        .padding(18)
-        .glassCard(borderColor: Color.red.opacity(0.35))
+        .padding(18).glassCard(borderColor: Color.red.opacity(0.35))
     }
 
-    private func penaltyCellView(label: String, value: String, color: Color) -> some View {
-        VStack(spacing: 3) {
-            Text(label).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(color)
-        }
-        .frame(maxWidth: .infinity)
-    }
+    // MARK: ── TAB 2: KADEME TASARIMI ──
 
-    // MARK: ── SEKME 2: Kondansatör ──
-
-    private var capacitorTab: some View {
+    private var stepsTab: some View {
         VStack(spacing: 16) {
-            // Gerekli Qc
-            VStack(spacing: 10) {
-                HStack {
-                    Image(systemName: "cylinder.split.1x2.fill").foregroundStyle(Color.purple)
-                    Text("Gerekli Kondansatör Gücü")
-                        .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                Text(String(format: "%.1f kVAr", requiredQcKVAr))
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.orange)
-                    .shadow(color: Color.orange.opacity(0.5), radius: 10)
-                Text("Qc = P × (tan φ₁ - tan φ₂)")
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundStyle(.gray.opacity(0.55))
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.orange.opacity(0.4))
-
-            // Kondansatör gruplama
-            capacitorGroupingCard
-
-            // Piyasa hazır step paketleri
-            marketStepPackagesCard
-
-            // Standart basamaklar
-            standardStepsCard
-
-            // Kapasitans hesabı
-            capacitanceCard
-
-            // Tip önerisi
-            compensationTypeCard
+            requiredQcBanner
+            stepCountPickerCard
+            if computedQcKVAr > 0 { stepTableCard }
+            mixedStepsCard
+            reactorSelectionCard
+            physicalSpaceCard
         }
     }
 
-    // Kondansatör gruplama — kullanıcı kademe sayısı girer
-    private var capacitorGroupingCard: some View {
-        let stepCount = max(1, Int(stepCountStr) ?? 12)
-        let kvarPerStep = requiredQcKVAr / Double(stepCount)
+    private var requiredQcBanner: some View {
+        HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Gerekli Kompanzasyon").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                Text(String(format: "%.1f kVAr", computedQcKVAr))
+                    .font(.system(size: 36, weight: .bold, design: .rounded)).foregroundStyle(.orange)
+                    .shadow(color: Color.orange.opacity(0.5), radius: 10)
+                Text("Qc = P × (tan φ₁ − tan φ₂)").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.55))
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 8) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("şu an").font(.system(size: 10, design: .rounded)).foregroundStyle(.gray)
+                    Text(String(format: "%.3f", computedCosPhi)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                }
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("hedef").font(.system(size: 10, design: .rounded)).foregroundStyle(.gray)
+                    Text(String(format: "%.2f", targetCosPhi)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.green)
+                }
+            }
+        }
+        .padding(18).glassCard(borderColor: Color.orange.opacity(0.4))
+    }
 
-        // En yakın standart kondansatör değeri
-        let standardOptions: [Double] = [5, 10, 12.5, 25, 50, 75, 100]
-        let suggestedStep = standardOptions.min(by: { abs($0 - kvarPerStep) < abs($1 - kvarPerStep) }) ?? 25
-        let equalTotal = suggestedStep * Double(stepCount)
-        let equalExcess = equalTotal - requiredQcKVAr
+    private var stepCountPickerCard: some View {
+        let perStep  = computedQcKVAr / Double(max(1, stepCountOption))
+        let std      = nearestStandard(perStep)
+        let total    = std * Double(stepCountOption)
+        let excess   = total - computedQcKVAr
+        let minStep  = computedQcKVAr * 0.05
+        let tooSmall = std < minStep && computedQcKVAr > 0
 
-        // Karma gruplama (nearestSteps)
-        let mixedSteps = nearestSteps(total: requiredQcKVAr, options: [12.5, 25, 50])
-        var mixedCount: [Double: Int] = [:]
-        for s in mixedSteps { mixedCount[s, default: 0] += 1 }
-        let mixedGrouped = mixedCount.sorted { $0.key > $1.key }
-        let mixedTotal = mixedGrouped.reduce(0.0) { $0 + $1.key * Double($1.value) }
-        let mixedStepCount = mixedGrouped.reduce(0) { $0 + $1.value }
-
-        return VStack(spacing: 14) {
+        return VStack(spacing: 12) {
             HStack {
                 Image(systemName: "square.grid.2x2.fill").foregroundStyle(Color.purple)
-                Text("Kondansatör Gruplama")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text("Kademe Sayısı").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
+                Text("Önerilen: \(loadProfile.suggestedMinSteps)+")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(Color.purple.opacity(0.75))
             }
-
-            if requiredQcKVAr < 1 {
-                Text("Kompanzasyon gerekmez — cos φ yeterli")
-                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
-            } else {
-                // Kademe sayısı girişi
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Kademe Sayısı").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.gray)
-                    HStack(spacing: 10) {
-                        Button {
-                            let v = max(1, (Int(stepCountStr) ?? 12) - 1)
-                            stepCountStr = "\(v)"
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.system(size: 26)).foregroundStyle(Color.purple.opacity(0.85))
+            HStack(spacing: 6) {
+                ForEach([4, 6, 8, 12, 16], id: \.self) { cnt in
+                    Button { withAnimation { stepCountOption = cnt } } label: {
+                        VStack(spacing: 2) {
+                            Text("\(cnt)").font(.system(size: 16, weight: .black, design: .rounded))
+                            Text("kd.").font(.system(size: 9, design: .rounded))
                         }
-                        .buttonStyle(.plain)
-
-                        TextField("12", text: $stepCountStr)
-                            .keyboardType(.numberPad)
-                            .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 52)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.07))
-                            .cornerRadius(8)
-
-                        Button {
-                            let v = (Int(stepCountStr) ?? 12) + 1
-                            stepCountStr = "\(v)"
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 26)).foregroundStyle(Color.purple.opacity(0.85))
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("kademe")
-                            .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
-                        Spacer()
-                        Text(String(format: "%.1f kVAr/kademe", kvarPerStep))
-                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
+                        .foregroundStyle(stepCountOption == cnt ? .black : .gray)
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 10)
+                            .fill(stepCountOption == cnt ? Color.purple : Color.white.opacity(0.07)))
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(12)
-                .background(Color.purple.opacity(0.06))
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.2), lineWidth: 1))
-
-                // Eşit kademeli sonuç
-                VStack(spacing: 8) {
-                    Text("EŞİT KADEMELİ GRUPLAMA")
-                        .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack(spacing: 6) {
-                        Text("\(stepCount)")
-                            .font(.system(size: 24, weight: .black, design: .rounded)).foregroundStyle(Color.purple)
-                        Text("kademe")
-                            .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
-                        Text("×")
-                            .font(.system(size: 18, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
-                        Text(String(format: "%.0f kVAr", suggestedStep))
-                            .font(.system(size: 24, weight: .black, design: .rounded)).foregroundStyle(.white)
-                        Text("=")
-                            .font(.system(size: 18, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
-                        Text(String(format: "%.0f kVAr", equalTotal))
-                            .font(.system(size: 24, weight: .black, design: .rounded))
-                            .foregroundStyle(equalExcess < 1 ? .green : .orange)
+            }
+            if computedQcKVAr > 0 {
+                VStack(spacing: 6) {
+                    HStack {
+                        Text("Kademe başı kVAr:").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                        Spacer()
+                        Text(String(format: "%.1f → standart %.0f kVAr", perStep, std))
+                            .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(14)
-                    .background(Color.purple.opacity(0.08))
-                    .cornerRadius(12)
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.25), lineWidth: 1))
-
-                    Text(String(format: "Standart kondansatör: %.0f kVAr · İhtiyaç: %.0f kVAr", suggestedStep, requiredQcKVAr))
-                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if equalExcess > 0.5 {
+                    HStack {
+                        Text("Kurulacak toplam:").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                        Spacer()
+                        Text(String(format: "%.0f kVAr", total))
+                            .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(excess < 1 ? .green : .orange)
+                    }
+                    if excess > 0.5 {
                         HStack(spacing: 5) {
                             Image(systemName: "info.circle").font(.system(size: 11)).foregroundStyle(.orange)
-                            Text(String(format: "+%.0f kVAr fazla kurulacak — ihtiyaçtan büyük standart değer seçildi", equalExcess))
+                            Text(String(format: "+%.0f kVAr fazla — standart değer yuvarlandı", excess))
                                 .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange.opacity(0.85))
                         }
                     }
-                }
-
-                // Karma gruplama
-                if !mixedGrouped.isEmpty && abs(mixedTotal - equalTotal) > 0.1 {
-                    Divider().background(Color.purple.opacity(0.2))
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("KARMA GRUPLAMA")
-                                .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-                            Spacer()
-                            Text("\(mixedStepCount) kademe · \(String(format: "%.0f kVAr", mixedTotal))")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.green)
-                        }
-                        ForEach(mixedGrouped, id: \.key) { pair in
-                            HStack(spacing: 12) {
-                                Text("\(pair.value) adet")
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.black)
-                                    .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(Capsule().fill(Color.purple))
-                                Text("×")
-                                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
-                                Text(String(format: "%.0f kVAr", pair.key))
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                                Spacer()
-                                Text(String(format: "= %.0f kVAr", pair.key * Double(pair.value)))
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.purple.opacity(0.85))
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.07))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.2), lineWidth: 1)))
-                        }
-                        Text("Karma gruplama tam ihtiyacı karşılar — sıfır fazlalık")
-                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.green.opacity(0.8))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-        }
-        .padding(18)
-        .glassCard(borderColor: Color.purple.opacity(0.35))
-    }
-
-    // Piyasada hazır satılan 25 / 50 / 75 / 100 kVAr step paket seçenekleri
-    private var marketStepPackagesCard: some View {
-        let marketSteps: [Double] = [25, 50, 75, 100]
-
-        return VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "cart.fill").foregroundStyle(amber)
-                Text("Piyasa Hazır Step Paketleri")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Spacer()
-            }
-            Text(String(format: "%.1f kVAr için kademe seçenekleri", requiredQcKVAr))
-                .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            ForEach(marketSteps, id: \.self) { step in
-                let count = requiredQcKVAr > 0 ? max(1, Int(ceil(requiredQcKVAr / step))) : 0
-                let total = Double(count) * step
-                let excess = total - requiredQcKVAr
-                HStack(spacing: 10) {
-                    Text(String(format: "%.0f kVAr", step))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(amber)
-                        .frame(width: 64, alignment: .leading)
-                    Text("→")
-                        .foregroundStyle(.gray.opacity(0.4))
-                    Text("\(count) kademe")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(String(format: "%.0f kVAr", total))
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(excess < 0.01 ? Color.green : Color.orange)
-                        if excess > 0.01 {
-                            Text(String(format: "+%.0f kVAr fazla", excess))
-                                .font(.system(size: 10, design: .rounded))
-                                .foregroundStyle(.gray.opacity(0.5))
+                    if tooSmall {
+                        HStack(spacing: 5) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(.red)
+                            Text(String(format: "Kademe (%.0f kVAr) Qc'nin %%5'inden (%.0f kVAr) küçük — AKP hassas ayar yapamaz", std, minStep))
+                                .font(.system(size: 11, design: .rounded)).foregroundStyle(.red.opacity(0.9))
                         }
                     }
                 }
                 .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(amber.opacity(0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(amber.opacity(0.2), lineWidth: 1))
-                )
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.07))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.2), lineWidth: 1)))
             }
         }
-        .padding(18)
-        .glassCard(borderColor: amber.opacity(0.3))
+        .padding(16).glassCard(borderColor: Color.purple.opacity(0.3))
     }
 
-    private var standardStepsCard: some View {
-        let steps: [Double] = [12.5, 25, 50, 75, 100]
-        let selectedSteps = nearestSteps(total: requiredQcKVAr, options: steps)
-
-        return VStack(spacing: 12) {
+    private var stepTableCard: some View {
+        let rows = stepDesign()
+        return VStack(spacing: 8) {
             HStack {
-                Text("📋 Standart Kademeler")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Image(systemName: "list.number").foregroundStyle(Color.purple)
+                Text("Kademe Detayı").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
             }
-            ForEach(selectedSteps, id: \.self) { step in
+            HStack {
+                Text("Kd.").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 28)
+                Text("kVAr").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .center)
+                Text("Standart").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .center)
+                Text("Kontaktör").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Color.white.opacity(0.04)).cornerRadius(6)
+
+            ForEach(Array(rows.enumerated()), id: \.0) { i, row in
                 HStack {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                    Text("\(Int(step)) kVAr kondansatör")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(.white.opacity(0.85))
-                    Spacer()
-                    Text("C = \(String(format: "%.1f", capacitance(kvar: step))) μF")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Color.cyan)
+                    Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.purple).frame(width: 28)
+                    Text(String(format: "%.1f", row.kvarEach))
+                        .font(.system(size: 12, design: .rounded)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    Text(String(format: "%.0f kVAr", row.standard))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(abs(row.standard - row.kvarEach) < 0.1 ? Color.green : Color.orange)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    Text(String(format: "%.1f A", row.contactorA))
+                        .font(.system(size: 12, design: .rounded)).foregroundStyle(Color.cyan)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.green.opacity(0.08))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.green.opacity(0.25), lineWidth: 1))
-                )
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(i % 2 == 0 ? 0.04 : 0.0)))
             }
         }
-        .padding(18)
-        .glassCard(borderColor: Color.green.opacity(0.3))
+        .padding(16).glassCard(borderColor: Color.purple.opacity(0.25))
     }
 
-    private var capacitanceCard: some View {
-        let c = capacitance(kvar: requiredQcKVAr)
-        return HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Kapasitans").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-                Text(String(format: "%.1f μF", c))
-                    .font(.system(size: 28, weight: .bold, design: .rounded)).foregroundStyle(Color.cyan)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("Formül").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
-                Text("C = Qc / (2πfU²)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-            }
-        }
-        .padding(18)
-        .glassCard(borderColor: Color.cyan.opacity(0.3))
-    }
+    private var mixedStepsCard: some View {
+        let mixedRaw = nearestSteps(total: computedQcKVAr, options: [12.5, 25, 50, 75, 100])
+        var counts: [Double: Int] = [:]
+        for s in mixedRaw { counts[s, default: 0] += 1 }
+        let grouped    = counts.sorted { $0.key > $1.key }
+        let mixedTotal = grouped.reduce(0.0) { $0 + $1.key * Double($1.value) }
+        let mixedCount = grouped.reduce(0) { $0 + $1.value }
 
-    private var compensationTypeCard: some View {
-        let isAuto = requiredQcKVAr > 50
-        return HStack(spacing: 14) {
-            Image(systemName: isAuto ? "cpu.fill" : "minus.plus.batteryblock.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(isAuto ? Color.purple : amber)
-                .shadow(color: (isAuto ? Color.purple : amber).opacity(0.5), radius: 8)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Tip Önerisi")
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-                Text(isAuto ? "Otomatik Kompanzasyon (AKP)" : "Sabit Kondansatör Grubu")
-                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text(isAuto ? "Değişken yük için idealdir" : "Sabit yük için uygun")
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-            }
-            Spacer()
-            Text(isAuto ? "OTOMATİK" : "SABİT")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.black)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(isAuto ? Color.purple : amber))
-        }
-        .padding(18)
-        .glassCard(borderColor: (isAuto ? Color.purple : amber).opacity(0.35))
-    }
-
-    // MARK: ── SEKME 3: AKP Boyutlandırma ──
-
-    private var akpTab: some View {
-        let stepSize: Double
-        switch requiredQcKVAr {
-        case ..<25:  stepSize = 12.5
-        case ..<75:  stepSize = 25.0
-        case ..<150: stepSize = 50.0
-        default:     stepSize = 100.0
-        }
-        let stepCount = max(1, Int(ceil(requiredQcKVAr / stepSize)))
-        let systemV = Double(systemVoltage) ?? 400.0
-        let contactorA = (stepSize * 1000.0) / (sqrt(3.0) * systemV) * 1.43
-        let needsReactor = thdPercent > 8.0
-
-        return VStack(spacing: 16) {
-            // Kademe bilgisi
-            HStack(spacing: 0) {
-                akpCell(label: "Kademe Sayısı", value: "\(stepCount)", unit: "kademe", color: Color.purple)
-                Divider().background(Color.purple.opacity(0.3)).frame(height: 60)
-                akpCell(label: "Adım Büyüklüğü", value: String(format: "%.0f", stepSize), unit: "kVAr", color: amber)
-                Divider().background(Color.purple.opacity(0.3)).frame(height: 60)
-                akpCell(label: "Kontaktör Akımı", value: String(format: "%.1f", contactorA), unit: "A", color: Color.cyan)
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.purple.opacity(0.35))
-
-            // Reaktör gereksinimi
-            reactorRequirementCard(needsReactor: needsReactor)
-
-            // Pano boyutu
-            panoBoyutuCard(stepCount: stepCount)
-        }
-    }
-
-    private func akpCell(label: String, value: String, unit: String, color: Color) -> some View {
-        VStack(spacing: 3) {
-            Text(label).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(value).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(color)
-            Text(unit).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func reactorRequirementCard(needsReactor: Bool) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: needsReactor ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(needsReactor ? Color.orange : Color.green)
-                .shadow(color: (needsReactor ? Color.orange : Color.green).opacity(0.5), radius: 8)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Reaktör Gereksinimi")
-                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text(needsReactor ? "THD > %8 — Detuned reaktör zorunlu!" : "THD < %8 — Reaktör şart değil")
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundStyle(needsReactor ? Color.orange : Color.green)
-                if needsReactor {
-                    Text("Önerilen: %7 detuned (189 Hz rezonans koruması)")
-                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
-                }
-            }
-            Spacer()
-        }
-        .padding(18)
-        .glassCard(borderColor: (needsReactor ? Color.orange : Color.green).opacity(0.4))
-    }
-
-    private func panoBoyutuCard(stepCount: Int) -> some View {
-        let width = min(2400, 400 + stepCount * 200)
-        return VStack(spacing: 10) {
+        return VStack(spacing: 12) {
             HStack {
-                Text("🗄️ Pano Boyutu Tahmini")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Image(systemName: "puzzlepiece.fill").foregroundStyle(Color.teal)
+                Text("Karma Kademe (Alternatif)").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                if !grouped.isEmpty && computedQcKVAr > 0 {
+                    Text("\(mixedCount) kd. · \(String(format: "%.0f", mixedTotal)) kVAr")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Color.teal)
+                }
+            }
+            Text("Fazlalık olmadan tam Qc karşılar. Büyük + küçük kondansatör karışımı.")
+                .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            if grouped.isEmpty || computedQcKVAr < 1 {
+                Text("Kompanzasyon gerekmez.").font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
+            } else {
+                ForEach(grouped, id: \.key) { pair in
+                    HStack(spacing: 12) {
+                        Text("\(pair.value) adet").font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.black).padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill(Color.teal))
+                        Text("×").font(.system(size: 13)).foregroundStyle(.gray.opacity(0.5))
+                        Text(String(format: "%.0f kVAr", pair.key))
+                            .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                        Spacer()
+                        Text(String(format: "= %.0f kVAr", pair.key * Double(pair.value)))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.teal.opacity(0.85))
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.06))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.2), lineWidth: 1)))
+                }
+                Text("Karma gruplama tam ihtiyacı karşılar — sıfır fazlalık")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(Color.teal.opacity(0.8))
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.teal.opacity(0.3))
+    }
+
+    private var reactorSelectionCard: some View {
+        let (rlabel, rfactor, rcolor, rreason) = reactorInfo
+        let showForceWarning = loadProfile.forceReactor && thdPercent < 8
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "slider.horizontal.3").foregroundStyle(rcolor)
+                Text("Reaktör Seçimi").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Text(String(format: "THD: %.1f%%", thdPercent))
+                    .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(rcolor)
+            }
+            HStack(spacing: 14) {
+                Image(systemName: thdPercent < 5 && !showForceWarning ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 28)).foregroundStyle(rcolor).shadow(color: rcolor.opacity(0.4), radius: 6)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rlabel).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(rcolor)
+                    Text(rreason).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                    if rfactor != "—" {
+                        Text("Detuning faktörü: \(rfactor)")
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+                    }
+                }
                 Spacer()
             }
-            HStack(spacing: 20) {
-                dimensionCell(label: "Genişlik", value: "\(width) mm")
-                dimensionCell(label: "Yükseklik", value: "2000 mm")
-                dimensionCell(label: "Derinlik", value: "600 mm")
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(rcolor.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(rcolor.opacity(0.25), lineWidth: 1)))
+            if showForceWarning {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill").font(.system(size: 12)).foregroundStyle(.orange)
+                    Text("Darbeli yük profili — düşük THD'de bile reaktör önerilir")
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange.opacity(0.9))
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
             }
         }
-        .padding(18)
-        .glassCard(borderColor: amber.opacity(0.3))
+        .padding(16).glassCard(borderColor: rcolor.opacity(0.3))
     }
 
-    private func dimensionCell(label: String, value: String) -> some View {
-        VStack(spacing: 3) {
-            Text(label).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(value).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(amber)
+    private var physicalSpaceCard: some View {
+        let cabinets = stepCountOption > 12 ? 2 : 1
+        let width    = min(400 + stepCountOption * 200, 2400)
+        let cc: Color = cabinets > 1 ? .orange : .green
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "square.3.layers.3d").foregroundStyle(amber)
+                Text("Fiziksel Yer Tahmini").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            HStack(spacing: 0) {
+                miniMetric("Genişlik",  "\(width) mm", amber)
+                miniMetric("Yükseklik", "2000 mm", .gray)
+                miniMetric("Derinlik",  "600 mm", .gray)
+                miniMetric("Dolap",     "\(cabinets) adet", cc)
+            }
+            if cabinets > 1 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(.orange)
+                    Text("\(stepCountOption) kademe → 2 dolap gerekir. Kurulum alanı planlanmalı.")
+                        .font(.system(size: 12, design: .rounded)).foregroundStyle(.orange.opacity(0.9))
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
+            }
         }
-        .frame(maxWidth: .infinity)
+        .padding(16).glassCard(borderColor: amber.opacity(0.3))
     }
 
-    // MARK: ── SEKME 4: Harmonik Analiz ──
+    // MARK: ── TAB 3: SAHA ÖLÇÜM REHBERİ ──
+
+    private var fieldTab: some View {
+        VStack(spacing: 16) {
+            peakAverageCard
+            fieldGuideCard(icon: "number.circle.fill", color: .cyan, title: "1. OSOS / Sayaç Okuma",
+                steps: ["Dağıtım tablosundaki OSOS cihazına veya akıllı sayaca erişin.",
+                        "Aktif enerji (kWh), endüktif reaktif (kVArh) ve kapasitif reaktif (kVArh) değerlerini not alın.",
+                        "Aylık faturadaki 'Reaktif Bedel' satırı TEDAŞ'ın hesapladığı cezayı gösterir.",
+                        "TEDAŞ online sistemi veya OSOS web arayüzünden aylık Excel raporu indirilebilir."])
+            fieldGuideCard(icon: "antenna.radiowaves.left.and.right", color: .purple, title: "2. Güç Analizörü Bağlantısı",
+                steps: ["Akım problarını faz iletkenlerine (R–S–T) takın — ok yönüne dikkat edin.",
+                        "Gerilim problarını MCC giriş baralarına veya pano çıkışına bağlayın.",
+                        "Cihaz otomatik olarak cos φ, THD%, kW, kVA, kVAr hesaplar.",
+                        "En az 15 dakika ölçüm yapın; pik/vadi değerlerini ayrı kaydedin.",
+                        "Önerilen: Fluke 435-II, Hioki PW3360, Chauvin Arnoux CA 8335"])
+            fieldGuideCard(icon: "mappin.circle.fill", color: .orange, title: "3. Ölçüm Noktası",
+                steps: ["Ana tablo (MCC) giriş barası — tesisin toplam yükünü gösterir.",
+                        "Transformatör sekonder çıkışı — kompanzasyon öncesi referans noktası.",
+                        "Grup kompanzasyon: her MCC veya dağıtım tablosunda ayrı ölçüm gerekir.",
+                        "Münferit kompanzasyon: kritik motorların her birinde ayrı cos φ ölçümü."])
+            fieldGuideCard(icon: "clock.fill", color: .green, title: "4. Ölçüm Zamanlaması",
+                steps: ["Tam yük saatinde ölçüm yapın — genellikle mesai başlangıcı 08:00–10:00.",
+                        "Gece 22:00–06:00 arası reaktif enerji 2 kat fiyatlandırılır; bu saati de kaydedin.",
+                        "Sanayi: Pazartesi sabahı soğuk çalışma ile perşembe öğleden sonra tam yükü karşılaştırın.",
+                        "Mevsimsel değişken tesisler için yaz/kış ayrı ölçüm gerekebilir."])
+        }
+    }
+
+    private var peakAverageCard: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "chart.bar.xaxis").foregroundStyle(Color.orange)
+                Text("Pik / Ortalama Yük Karşılaştırması").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Toggle("", isOn: $usePeakMode).tint(Color.orange).labelsHidden()
+            }
+            if usePeakMode {
+                VStack(spacing: 10) {
+                    Text("Pik ölçüm en kötü senaryoyu belirler — AKP boyutlandırması buna göre yapılır.")
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                    HStack {
+                        Text("PIK (Tam Yük)").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                        Spacer()
+                    }
+                    inputFieldRow(label: "Aktif Güç (kW)",    binding: $peakActivePowerKW, keyboard: .numberPad)
+                    inputFieldRow(label: "Görünür Güç (kVA)", binding: $peakApparentKVA,   keyboard: .numberPad)
+                    Divider().background(Color.white.opacity(0.1))
+                    let pkW  = Double(peakActivePowerKW) ?? 0
+                    let pkVA = max(1, Double(peakApparentKVA) ?? 1)
+                    let pkCos = pkW / pkVA
+                    let pkQc  = pkCos < targetCosPhi && pkW > 0
+                        ? pkW * (tan(acos(max(0.001, pkCos))) - tan(acos(targetCosPhi))) : 0.0
+                    HStack(spacing: 0) {
+                        miniMetric("Pik cos φ", String(format: "%.3f", pkCos), pkCos >= 0.95 ? .green : .red)
+                        miniMetric("Pik Qc",    String(format: "%.0f kVAr", pkQc), .orange)
+                        miniMetric("Ort. Qc",   String(format: "%.0f kVAr", computedQcKVAr), amber)
+                    }
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 12)).foregroundStyle(.red)
+                        Text(String(format: "Boyutlandırma: max(%.0f, %.0f) = %.0f kVAr kullanın",
+                                    pkQc, computedQcKVAr, max(pkQc, computedQcKVAr)))
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.red.opacity(0.9))
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.07)))
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                Text("Etkinleştirin: Pik ve ortalama yük ayrı ölçülerek en kötü durum AKP boyutu belirlenir.")
+                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.orange.opacity(0.3))
+    }
+
+    private func fieldGuideCard(icon: String, color: Color, title: String, steps: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 20)).foregroundStyle(color)
+                Text(title).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            }
+            ForEach(Array(steps.enumerated()), id: \.0) { _, step in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("·").font(.system(size: 14, weight: .bold)).foregroundStyle(color).frame(width: 10)
+                    Text(step).font(.system(size: 12, design: .rounded)).foregroundStyle(.white.opacity(0.75))
+                }
+            }
+        }
+        .padding(16).glassCard(borderColor: color.opacity(0.25))
+    }
+
+    // MARK: ── TAB 4: HARMONİK ──
 
     private var harmonicTab: some View {
-        let trafoKVA = Double(transformerKVA) ?? 250.0
-        let sccKVA = trafoKVA / 0.06
-        let resonanceHz = requiredQcKVAr > 0
-            ? frequency * sqrt(sccKVA / requiredQcKVAr)
-            : 0.0
-        let riskLevel: Int  // 0=yeşil, 1=turuncu, 2=kırmızı
-        if thdPercent < 5        { riskLevel = 0 }
-        else if thdPercent < 15  { riskLevel = 1 }
-        else                      { riskLevel = 2 }
-
-        let riskColor: Color = riskLevel == 0 ? .green : riskLevel == 1 ? .orange : .red
-        let riskText = riskLevel == 0 ? "Düşük Risk" : riskLevel == 1 ? "Orta Risk" : "Yüksek Risk"
+        let trafoKVA   = Double(transformerKVA) ?? 250.0
+        let sccKVA     = trafoKVA / 0.06
+        let resonanceHz = computedQcKVAr > 0 ? frequency * sqrt(sccKVA / computedQcKVAr) : 0.0
+        let rc: Color  = thdPercent < 5 ? .green : thdPercent < 15 ? .orange : .red
+        let rtxt        = thdPercent < 5 ? "Düşük Risk" : thdPercent < 15 ? "Orta Risk" : "Yüksek Risk"
 
         return VStack(spacing: 16) {
-            // Eğitim kartları
-            VStack(spacing: 10) {
-                harmonicInfoCard(
-                    icon: "waveform.path",
-                    title: "THD Nedir?",
-                    body: "THD (Toplam Harmonik Distorsiyon), şebeke geriliminin veya akımının ne kadar bozulduğunu gösteren bir yüzdedir. Saf sinüs dalgasından sapma ne kadar büyükse THD o kadar yüksektir. Örnek: %5 THD → şebeke hâlâ temiz; %20 THD → ciddi bozulma var.",
-                    color: Color.purple
-                )
-                harmonicInfoCard(
-                    icon: "platter.2.filled.iphone",
-                    title: "Sahada Nasıl Ölçülür?",
-                    body: "Power quality analizörü veya THD ölçümü yapabilen bir multimetre kullanın. Ölçümü tablodaki ÖLÇÜM NOKTASINA — genellikle MCC paneli giriş barası veya şebeke bağlantı noktası — prob uçlarını yerleştirerek yapın. Cihaz THD% değerini doğrudan gösterir.",
-                    color: Color.cyan
-                )
-                harmonicInfoCard(
-                    icon: "exclamationmark.triangle",
-                    title: "Ne Zaman Sorun Olur?",
-                    body: "IEC 61000-3-12 / EN 50160 standardına göre: %5 altı → normal · %5–8 → dikkat et · %8'in üzeri → kompanzasyon kondansatörleri ısınır, trafolar erken yıpranır, sigortalar gereksiz atar. Invertör, kaynak makinesi ve VFD bulunan tesislerde özellikle takip edin.",
-                    color: Color.orange
-                )
-            }
+            harmonicInfoCard(icon: "waveform.path",          color: .purple, title: "THD Nedir?",
+                body: "THD (Toplam Harmonik Distorsiyon), şebeke geriliminin saf sinüs dalgasından ne kadar saptığını gösteren yüzdedir. THD arttıkça kondansatörler ısınır, trafolar erken yıpranır, sigortalar gereksiz atar.")
+            harmonicInfoCard(icon: "platter.2.filled.iphone", color: .cyan,   title: "Sahada Nasıl Ölçülür?",
+                body: "Power quality analizörü kullanın. Akım problarını faz iletkenlerine, gerilim problarını şebeke bağlantı noktasına bağlayın. Cihaz THD% değerini doğrudan gösterir. İnvertör, VFD ve kaynak makinesi bulunan tesislerde düzenli ölçüm yapın.")
+            harmonicInfoCard(icon: "exclamationmark.triangle", color: .orange, title: "Ne Zaman Sorun Olur?",
+                body: "IEC 61000-3-12 / EN 50160: %5 altı normal · %5–8 dikkat · %8 üzeri reaktörsüz kondansatör kurmak tehlikelidir. Özellikle kompanzasyon devreye girince rezonans riski artar.")
 
-            // THD kaydırıcı
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Image(systemName: "waveform.path.ecg").foregroundStyle(Color.purple)
-                    Text("Toplam Harmonik Distorsiyon (THD)")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Text("THD (%)").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Spacer()
                     HStack(spacing: 4) {
                         TextField("0", text: $thdText)
-                            .keyboardType(.decimalPad)
-                            .frame(width: 50)
-                            .multilineTextAlignment(.trailing)
-                            .styledInput()
-                            .onChange(of: thdText) { _, newVal in
-                                let cleaned = newVal.replacingOccurrences(of: ",", with: ".")
-                                if let v = Double(cleaned), v >= 0, v <= 40 {
-                                    thdPercent = v
-                                }
+                            .keyboardType(.decimalPad).frame(width: 50)
+                            .multilineTextAlignment(.trailing).styledInput()
+                            .onChange(of: thdText) { _, v in
+                                let c = v.replacingOccurrences(of: ",", with: ".")
+                                if let d = Double(c), d >= 0, d <= 40 { thdPercent = d }
                             }
-                        Text("%")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(riskColor)
+                        Text("%").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(rc)
                     }
                 }
-                Slider(value: $thdPercent, in: 0...40, step: 0.5)
-                    .tint(riskColor)
-                    .onChange(of: thdPercent) { _, newVal in
-                        thdText = String(format: "%.1f", newVal)
-                    }
+                Slider(value: $thdPercent, in: 0...40, step: 0.5).tint(rc)
+                    .onChange(of: thdPercent) { _, v in thdText = String(format: "%.1f", v) }
                 HStack {
                     Text("Temiz").font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
                     Spacer()
                     Text("Kritik").font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
                 }
             }
-            .padding(18)
-            .glassCard(borderColor: riskColor.opacity(0.4))
+            .padding(18).glassCard(borderColor: rc.opacity(0.4))
 
-            // Rezonans frekansı
             VStack(spacing: 8) {
                 HStack {
                     Image(systemName: "antenna.radiowaves.left.and.right").foregroundStyle(Color.cyan)
-                    Text("Rezonans Frekansı")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Text("Rezonans Frekansı").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Spacer()
                 }
                 Text(String(format: "%.1f Hz", resonanceHz))
-                    .font(.system(size: 38, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.cyan)
+                    .font(.system(size: 38, weight: .bold, design: .rounded)).foregroundStyle(Color.cyan)
                     .shadow(color: Color.cyan.opacity(0.5), radius: 10)
-                Text("fr = f₀ × √(Scc / Qc)")
-                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.55))
+                Text("fr = f₀ × √(Scc / Qc)").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.55))
             }
-            .padding(18)
-            .glassCard(borderColor: Color.cyan.opacity(0.35))
+            .padding(18).glassCard(borderColor: Color.cyan.opacity(0.35))
 
-            // Risk göstergesi (animasyonlu)
-            riskIndicator(color: riskColor, text: riskText, thd: thdPercent)
-
-            // Filtre önerisi (varsa)
-            if riskLevel > 0 { filterRecommendationCard(riskLevel: riskLevel) }
-        }
-    }
-
-    private func riskIndicator(color: Color, text: String, thd: Double) -> some View {
-        HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(color.opacity(0.15))
-                    .frame(width: 64, height: 64)
-                Circle()
-                    .fill(color.opacity(0.3))
-                    .frame(width: 44, height: 44)
-                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: thd)
-                Image(systemName: color == .green ? "checkmark.circle.fill" : color == .orange ? "exclamationmark.circle.fill" : "xmark.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(color)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Risk Seviyesi")
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-                Text(text)
-                    .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(color)
-                Text("IEC 61000-3-12 standardı")
-                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
-            }
-            Spacer()
-        }
-        .padding(18)
-        .glassCard(borderColor: color.opacity(0.4))
-    }
-
-    private func filterRecommendationCard(riskLevel: Int) -> some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "slider.horizontal.3").foregroundStyle(Color.orange)
-                Text("Filtre Önerisi").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(rc.opacity(0.15)).frame(width: 64, height: 64)
+                    Circle().fill(rc.opacity(0.3)).frame(width: 44, height: 44)
+                    Image(systemName: rc == .green ? "checkmark.circle.fill" : rc == .orange ? "exclamationmark.circle.fill" : "xmark.circle.fill")
+                        .font(.system(size: 28)).foregroundStyle(rc)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Risk Seviyesi").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
+                    Text(rtxt).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(rc)
+                    Text("IEC 61000-3-12 standardı").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+                }
                 Spacer()
             }
+            .padding(18).glassCard(borderColor: rc.opacity(0.4))
 
-            // Pasif vs Aktif karşılaştırma
-            HStack(spacing: 10) {
-                filterCompCell(
-                    title: "Pasif Filtre",
-                    subtitle: "Detuned Reaktör",
-                    cost: "12.000 – 35.000 ₺",
-                    pro: "Basit, güvenilir",
-                    con: "Frekans bağımlı",
-                    color: Color.orange
-                )
-                filterCompCell(
-                    title: "Aktif Filtre",
-                    subtitle: "IGBT Tabanlı",
-                    cost: "45.000 – 120.000 ₺",
-                    pro: "Tüm harmonikler",
-                    con: "Yüksek maliyet",
-                    color: Color.purple
-                )
-            }
+            reactorTableCard
         }
-        .padding(18)
-        .glassCard(borderColor: Color.orange.opacity(0.3))
     }
 
-    private func filterCompCell(title: String, subtitle: String, cost: String, pro: String, con: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(color)
-            Text(subtitle).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(cost).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-            HStack(spacing: 3) {
-                Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Color.green)
-                Text(pro).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+    private var reactorTableCard: some View {
+        let rows: [(thd: String, reactor: String, hz: String, color: Color)] = [
+            ("< %5",  "Reaktör Gerekmez",      "—",      .green),
+            ("%5–8",  "%5.67 Detuned",          "250 Hz", .orange),
+            ("%8–20", "%7 Detuned",              "189 Hz", Color(red:1,green:0.5,blue:0)),
+            ("> %20", "%14 / Aktif Filtre",     "135 Hz", .red),
+        ]
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "list.bullet.rectangle").foregroundStyle(amber)
+                Text("Reaktör Seçim Tablosu").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
             }
-            HStack(spacing: 3) {
-                Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(Color.red)
-                Text(con).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+            HStack {
+                Text("THD").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 55, alignment: .leading)
+                Text("Reaktör").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .leading)
+                Text("Koruma Hz").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 75, alignment: .trailing)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6).background(Color.white.opacity(0.04)).cornerRadius(6)
+
+            ForEach(Array(rows.enumerated()), id: \.0) { i, row in
+                let active: Bool = {
+                    switch i {
+                    case 0: return thdPercent < 5
+                    case 1: return thdPercent >= 5  && thdPercent < 8
+                    case 2: return thdPercent >= 8  && thdPercent < 20
+                    default: return thdPercent >= 20
+                    }
+                }()
+                HStack {
+                    Text(row.thd).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
+                        .foregroundStyle(active ? row.color : .gray).frame(width: 55, alignment: .leading)
+                    Text(row.reactor).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
+                        .foregroundStyle(active ? .white : .gray.opacity(0.6)).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(row.hz).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
+                        .foregroundStyle(active ? row.color : .gray.opacity(0.6)).frame(width: 75, alignment: .trailing)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(active
+                    ? RoundedRectangle(cornerRadius: 8).fill(row.color.opacity(0.1))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(row.color.opacity(0.3), lineWidth: 1))
+                    : nil)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(color.opacity(0.08))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.3), lineWidth: 1))
-        )
+        .padding(16).glassCard(borderColor: amber.opacity(0.25))
     }
 
-    private func harmonicInfoCard(icon: String, title: String, body: String, color: Color) -> some View {
+    private func harmonicInfoCard(icon: String, color: Color, title: String, body: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(color)
-                .frame(width: 28, height: 28)
+            Image(systemName: icon).font(.system(size: 18)).foregroundStyle(color).frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text(body)
-                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text(body).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(14)
-        .background(color.opacity(0.07))
-        .cornerRadius(12)
+        .padding(14).background(color.opacity(0.07)).cornerRadius(12)
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.2), lineWidth: 1))
     }
 
-    // MARK: ── SEKME 5: Transformatör ──
+    // MARK: ── TAB 5: EKONOMİK ANALİZ ──
 
-    private var transformerTab: some View {
-        let kva = Double(transformerKVA) ?? 250
-        let currentLoad = (Double(apparentPowerKVA) ?? 140) / kva
-        let afterLoad  = ((Double(apparentPowerKVA) ?? 140) - requiredQcKVAr) / kva
-        let capacityGain = requiredQcKVAr
-        let copperLossReduction = (1 - afterLoad * afterLoad / max(0.01, currentLoad * currentLoad)) * 100
-
-        return VStack(spacing: 16) {
-            // Transformatör gücü
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(amber)
-                    Text("Transformatör Gücü (kVA)")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                TextField("250", text: $transformerKVA)
-                    .keyboardType(.numberPad)
-                    .styledInput()
-            }
-            .padding(18)
-            .glassCard(borderColor: amber.opacity(0.3))
-
-            // Yük faktörü: Önce vs Sonra
-            VStack(spacing: 12) {
-                HStack {
-                    Text("📊 Trafo Yük Faktörü")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                loadFactorBar(label: "Kompanzasyon Öncesi", value: min(1.0, currentLoad), color: Color.red)
-                loadFactorBar(label: "Kompanzasyon Sonrası", value: min(1.0, max(0, afterLoad)), color: Color.green)
-            }
-            .padding(18)
-            .glassCard(borderColor: amber.opacity(0.25))
-
-            // Kazanımlar
-            HStack(spacing: 0) {
-                trafoGainCell(label: "Kapasite Kazanımı", value: String(format: "%.0f kVA", capacityGain), color: Color.green)
-                Divider().background(amber.opacity(0.2)).frame(height: 55)
-                trafoGainCell(label: "Bakır Kaybı Azalması", value: String(format: "%.0f%%", max(0, copperLossReduction)), color: amber)
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.green.opacity(0.3))
+    private var economyTab: some View {
+        VStack(spacing: 16) {
+            investmentBreakdownCard
+            savingsBreakdownCard
+            projectionTableCard
+            roiSummaryCard
+            scenarioComparisonCard
         }
     }
 
-    private func loadFactorBar(label: String, value: Double, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var investmentBreakdownCard: some View {
+        let (defCap, defCon, defReactor, defPanel, defLabor) = defaultCosts
+        let total = totalInvestment
+        return VStack(spacing: 12) {
             HStack {
-                Text(label).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+                Image(systemName: "banknote.fill").foregroundStyle(amber)
+                Text("Yatırım Kalemleri").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
-                Text(String(format: "%%%.0f", value * 100))
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(color)
+                Text(total.currencyFormatted).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(amber)
+            }
+            Text("Tahmini değerler. Düzenlemek için üzerine yazın.")
+                .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            costRow("Kondansatör",                   binding: $capCostStr,       placeholder: defCap,    icon: "cylinder.split.1x2.fill", color: .cyan)
+            costRow("Kontaktörler (\(stepCountOption) adet)", binding: $contactorCostStr, placeholder: defCon,    icon: "switch.2",               color: .purple)
+            costRow("Reaktör\(thdPercent >= 5 ? "" : " (gerekmez)")", binding: $reactorCostStr, placeholder: defReactor, icon: "slider.horizontal.3",    color: thdPercent >= 5 ? .orange : .gray)
+            costRow("Pano / Montaj Malzeme",          binding: $panelCostStr,     placeholder: defPanel,  icon: "square.3.layers.3d",      color: amber)
+            costRow("İşçilik",                        binding: $laborCostStr,     placeholder: defLabor,  icon: "person.fill",             color: .green)
+            Divider().background(amber.opacity(0.3))
+            HStack {
+                Text("TOPLAM YATIRIM").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(.gray)
+                Spacer()
+                Text(total.currencyFormatted).font(.system(size: 20, weight: .black, design: .rounded)).foregroundStyle(amber)
+            }
+        }
+        .padding(16).glassCard(borderColor: amber.opacity(0.3))
+    }
+
+    private func costRow(_ label: String, binding: Binding<String>, placeholder: Double, icon: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 14)).foregroundStyle(color).frame(width: 20)
+            Text(label).font(.system(size: 12, design: .rounded)).foregroundStyle(.white.opacity(0.8)).frame(maxWidth: .infinity, alignment: .leading)
+            TextField(String(Int(placeholder)), text: binding)
+                .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(color)
+                .frame(width: 90).styledInput()
+            Text("₺").font(.system(size: 12)).foregroundStyle(.gray)
+        }
+    }
+
+    private var savingsBreakdownCard: some View {
+        let (penalty, copper, total) = monthlySavingsBreakdown
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "chart.line.downtrend.xyaxis").foregroundStyle(Color.green)
+                Text("Aylık Tasarruf Kalemleri").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Text(total.currencyFormatted).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.green)
+            }
+            savingBar("TEDAŞ Ceza Kaçınımı",    value: penalty, total: total, color: .red)
+            savingBar("Bakır Kaybı Azalması",    value: copper,  total: total, color: .orange)
+            Divider().background(Color.green.opacity(0.3))
+            HStack {
+                Text("TOPLAM AYLIK TASARRUF").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.gray)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(total.currencyFormatted).font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.green)
+                    Text("Yıllık: \((total * 12).currencyFormatted)").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                }
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.green.opacity(0.3))
+    }
+
+    private func savingBar(_ label: String, value: Double, total: Double, color: Color) -> some View {
+        let pct = total > 0 ? value / total : 0
+        return VStack(spacing: 5) {
+            HStack {
+                Text(label).font(.system(size: 12, design: .rounded)).foregroundStyle(.white.opacity(0.75))
+                Spacer()
+                Text(value.currencyFormatted).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(color)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)).frame(height: 12)
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(LinearGradient(colors: [color.opacity(0.7), color], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: geo.size.width * value, height: 12)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: value)
+                    RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.06)).frame(height: 6)
+                    RoundedRectangle(cornerRadius: 4).fill(color).frame(width: geo.size.width * pct, height: 6)
+                        .animation(.spring(response: 0.6), value: pct)
                 }
+            }.frame(height: 6)
+        }
+    }
+
+    private var projectionTableCard: some View {
+        let (_, _, totalMonthly) = monthlySavingsBreakdown
+        let inv = totalInvestment
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "calendar.badge.clock").foregroundStyle(Color.cyan)
+                Text("Projeksiyon Tablosu").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
             }
-            .frame(height: 12)
-        }
-    }
+            HStack {
+                Text("Yıl").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 28)
+                Text("Kümülatif Tasarruf").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .trailing)
+                Text("Net (−Yatırım)").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5).background(Color.white.opacity(0.04)).cornerRadius(6)
 
-    private func trafoGainCell(label: String, value: String, color: Color) -> some View {
-        VStack(spacing: 3) {
-            Text(label).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(value).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(color)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: ── SEKME 6: Ekonomik Analiz ──
-
-    private var economyTab: some View {
-        let investment = Double(investmentCost) ?? 25000
-        let monthly    = monthlySaving
-        let payback    = monthly > 0 ? investment / monthly : 999
-        let tenYearData = (1...10).map { year in
-            (year: year, saving: monthly * 12 * Double(year) - investment)
-        }
-
-        return VStack(spacing: 16) {
-            // Yatırım
-            VStack(alignment: .leading, spacing: 8) {
+            ForEach([1, 3, 5, 10], id: \.self) { yr in
+                let cum = totalMonthly * 12 * Double(yr)
+                let net = cum - inv
                 HStack {
-                    Image(systemName: "building.2.fill").foregroundStyle(amber)
-                    Text("Yatırım Maliyeti")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
+                    Text("\(yr)").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(width: 28)
+                    Text(cum.currencyFormatted).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.cyan).frame(maxWidth: .infinity, alignment: .trailing)
+                    Text(net.currencyFormatted).font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(net >= 0 ? .green : .red).frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                TextField("25000", text: $investmentCost)
-                    .keyboardType(.numberPad)
-                    .styledInput()
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(net >= 0 ? Color.green.opacity(0.06) : Color.red.opacity(0.04)))
             }
-            .padding(18)
-            .glassCard(borderColor: amber.opacity(0.3))
-
-            // KPI kartları
-            HStack(spacing: 0) {
-                economyKPI(label: "Aylık Tasarruf", value: monthly.currencyFormatted, color: Color.green)
-                Divider().background(amber.opacity(0.2)).frame(height: 55)
-                economyKPI(label: "Geri Ödeme", value: String(format: "%.1f yıl", payback), color: amber)
-                Divider().background(amber.opacity(0.2)).frame(height: 55)
-                economyKPI(label: "10Y Tasarruf", value: (monthly * 120 - investment).currencyFormatted, color: Color.cyan)
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.green.opacity(0.3))
-
-            // 10 yıllık kümülatif grafik
-            VStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(Color.green)
-                    Text("10 Yıllık Kümülatif Tasarruf")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                Chart(tenYearData, id: \.year) { point in
-                    LineMark(
-                        x: .value("Yıl", point.year),
-                        y: .value("Tasarruf", point.saving)
-                    )
-                    .foregroundStyle(Color.green)
-                    .lineStyle(StrokeStyle(lineWidth: 2.5))
-                    AreaMark(
-                        x: .value("Yıl", point.year),
-                        y: .value("Tasarruf", point.saving)
-                    )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.green.opacity(0.3), Color.green.opacity(0.05)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    PointMark(
-                        x: .value("Yıl", point.year),
-                        y: .value("Tasarruf", point.saving)
-                    )
-                    .foregroundStyle(point.saving >= 0 ? Color.green : Color.red)
-                }
-                .frame(height: 200)
-                .chartXAxis {
-                    AxisMarks { v in
-                        AxisValueLabel { Text("Y\(v.as(Int.self) ?? 0)").font(.system(size: 10)).foregroundStyle(.gray.opacity(0.6)) }
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4])).foregroundStyle(.white.opacity(0.08))
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel().foregroundStyle(.gray.opacity(0.6))
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4])).foregroundStyle(.white.opacity(0.08))
-                    }
-                }
-
-                // NBD ve İVO değerleri
-                HStack(spacing: 20) {
-                    financialMetric(label: "NBD (10Y, %8)", value: nbv(cashFlow: monthly*12, rate: 0.08, years: 10, investment: investment).currencyFormatted, color: Color.cyan)
-                    financialMetric(label: "İç Verim Oranı", value: payback < 10 ? "~\(String(format: "%.0f", 100.0/payback))%" : "<%10", color: amber)
-                }
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.green.opacity(0.3))
         }
+        .padding(16).glassCard(borderColor: Color.cyan.opacity(0.25))
     }
 
-    private func economyKPI(label: String, value: String, color: Color) -> some View {
-        VStack(spacing: 3) {
-            Text(label).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(value).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.7)
-        }.frame(maxWidth: .infinity)
-    }
-
-    private func financialMetric(label: String, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
-            Text(value).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(color)
+    private var roiSummaryCard: some View {
+        let (_, _, totalMonthly) = monthlySavingsBreakdown
+        let inv = totalInvestment
+        let payback = totalMonthly > 0 ? inv / totalMonthly : 999
+        return HStack(spacing: 0) {
+            miniMetric("Geri Ödeme",   String(format: "%.1f ay", payback), .green)
+            Divider().background(amber.opacity(0.2)).frame(height: 55)
+            miniMetric("Aylık Tasarruf", totalMonthly.currencyFormatted, .cyan)
+            Divider().background(amber.opacity(0.2)).frame(height: 55)
+            miniMetric("10Y Net", (totalMonthly * 120 - inv).currencyFormatted, amber)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16).glassCard(borderColor: Color.green.opacity(0.3))
     }
 
-    /// Net Bugünkü Değer hesabı
-    private func nbv(cashFlow: Double, rate: Double, years: Int, investment: Double) -> Double {
-        var pv = 0.0
-        for y in 1...years { pv += cashFlow / pow(1 + rate, Double(y)) }
-        return pv - investment
+    private var scenarioComparisonCard: some View {
+        let (_, _, totalMonthly) = monthlySavingsBreakdown
+        let centralInv = totalInvestment
+        let groupInv   = centralInv * 1.30
+        let groupSave  = totalMonthly * 1.20
+        return VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.left.arrow.right.circle.fill").foregroundStyle(Color.purple)
+                Text("Senaryo Karşılaştırması").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            HStack(spacing: 10) {
+                scenarioCell("Merkezi AKP",  investment: centralInv, monthly: totalMonthly, color: .purple, note: "Trafo çıkışı — basit")
+                scenarioCell("Grup Komp.",   investment: groupInv,   monthly: groupSave,    color: .teal,   note: "MCC bazlı, hat kaybı azalır")
+            }
+        }
+        .padding(16).glassCard(borderColor: Color.purple.opacity(0.25))
     }
 
-    // MARK: ── SEKME 7: Rapor ──
+    private func scenarioCell(_ title: String, investment: Double, monthly: Double, color: Color, note: String) -> some View {
+        let pb = monthly > 0 ? investment / monthly : 999
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(color)
+            Text(note).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+            Divider().background(color.opacity(0.2))
+            HStack { Text("Yatırım:").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray); Spacer(); Text(investment.currencyFormatted).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.white) }
+            HStack { Text("Aylık:").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray); Spacer(); Text(monthly.currencyFormatted).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.green) }
+            HStack { Text("Geri ödeme:").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray); Spacer(); Text(String(format: "%.1f ay", pb)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(color) }
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(color.opacity(0.07))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.25), lineWidth: 1)))
+    }
+
+    // MARK: ── TAB 6: RAPOR VE TEKLİF ──
 
     private var reportTab: some View {
-        let kva = Double(transformerKVA) ?? 250
-        let isAuto = requiredQcKVAr > 50
-        let needsReactor = thdPercent > 8.0
-
-        return VStack(spacing: 16) {
-            // Özet kart
-            VStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "doc.text.fill").foregroundStyle(amber)
-                    Text("Kompanzasyon Özeti")
-                        .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                summaryRow(label: "Gerekli Kondansatör", value: String(format: "%.1f kVAr", requiredQcKVAr), color: Color.orange)
-                summaryRow(label: "AKP Tipi", value: isAuto ? "Otomatik (AKP)" : "Sabit", color: Color.purple)
-                summaryRow(label: "Reaktör Gereksinimi", value: needsReactor ? "Detuned Reaktör" : "Reaktör Gerekmez", color: needsReactor ? Color.orange : Color.green)
-                summaryRow(label: "Transformatör Kapasitesi", value: "\(Int(kva)) kVA", color: amber)
-                summaryRow(label: "Beklenen Geri Ödeme", value: monthlySaving > 0 ? String(format: "%.1f yıl", (Double(investmentCost) ?? 25000) / monthlySaving / 12) : "–", color: Color.cyan)
-            }
-            .padding(18)
-            .glassCard(borderColor: amber.opacity(0.35))
-
-            // Standart uyumluluk
-            VStack(spacing: 10) {
-                HStack {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Color.green)
-                    Text("Standart Uyumluluk")
-                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Spacer()
-                }
-                standardBadge(standard: "IEC 61921", desc: "Power factor correction capacitors")
-                standardBadge(standard: "EN 60831", desc: "Shunt power capacitors of the self-healing type")
-                standardBadge(standard: "IEC 61000-3-12", desc: "Harmonics — Industrial systems >16A")
-                standardBadge(standard: "TS EN 50160", desc: "Şebeke gerilim karakteristikleri")
-            }
-            .padding(18)
-            .glassCard(borderColor: Color.green.opacity(0.3))
-
-            // Aksiyon butonları
-            VStack(spacing: 12) {
-                Button {
-                    guard currentCosPhi > 0, currentCosPhi < targetCosPhi else { return }
-                    let compInput = CompensationInput(
-                        activePowerKW: Double(activePowerKW) ?? 0,
-                        apparentPowerKVA: Double(apparentPowerKVA) ?? 0,
-                        measuredCosPhi: currentCosPhi,
-                        targetCosPhi: targetCosPhi,
-                        systemVoltageV: Double(systemVoltage) ?? 400,
-                        transformerKVA: Double(transformerKVA),
-                        totalHarmonicDistortion: thdPercent,
-                        electricityTariff: penaltyRate,
-                        investmentCostTL: Double(investmentCost) ?? 25000
-                    )
-                    if let compResult = try? CompensationEngine.calculate(input: compInput) {
-                        pendingQuoteItems = QuoteEngine.itemsFromCompensation(compResult)
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        showCustomerPicker = true
-                    }
-                } label: {
-                    Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(RoundedRectangle(cornerRadius: 16).fill(amber).shadow(color: amber.opacity(0.4), radius: 8, y: 4))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    let pdfData = PDFService.generateCompensationReportPDF(
-                        activePowerKW:    Double(activePowerKW)    ?? 0,
-                        apparentPowerKVA: Double(apparentPowerKVA) ?? 0,
-                        currentCosPhi:    currentCosPhi,
-                        targetCosPhi:     targetCosPhi,
-                        requiredQcKVAr:   requiredQcKVAr,
-                        thdPercent:       thdPercent,
-                        penaltyRate:      penaltyRate,
-                        monthlySaving:    monthlySaving,
-                        investmentCost:   Double(investmentCost)   ?? 25000,
-                        transformerKVA:   Double(transformerKVA)   ?? 250,
-                        settings:         persistence.settings
-                    )
-                    ShareService.sharePDF(data: pdfData, filename: "Kompanzasyon-Raporu")
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                } label: {
-                    Label("PDF Önizleme", systemImage: "doc.richtext.fill")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.orange)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.orange.opacity(0.12))
-                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.orange, lineWidth: 1))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
+        VStack(spacing: 16) {
+            customerSummaryCard
+            technicalSummaryCard
+            standardsCard
+            actionButtonsView
         }
     }
 
-    private func summaryRow(label: String, value: String, color: Color) -> some View {
+    private var customerSummaryCard: some View {
+        let (_, _, totalMonthly) = monthlySavingsBreakdown
+        let inv = totalInvestment
+        let pb  = totalMonthly > 0 ? inv / totalMonthly : 999
+        let pbStr = pb < 120
+            ? String(format: "%.0f ay (%.1f yıl)", pb, pb / 12)
+            : "> 10 yıl"
+        let stepStd = nearestStandard(computedQcKVAr / Double(max(1, stepCountOption)))
+        return VStack(spacing: 14) {
+            HStack {
+                Image(systemName: "person.fill.checkmark").foregroundStyle(.green)
+                Text("Müşteri Özeti").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Text("Sade Anlatım").font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                summaryLine("📌", "Mevcut cos φ: \(String(format: "%.3f", computedCosPhi)) — Hedef: \(String(format: "%.2f", targetCosPhi))")
+                summaryLine("⚡", "Şu an aylık tahmini \(computedMonthlySaving.currencyFormatted) reaktif enerji cezası ödüyorsunuz.")
+                summaryLine("🔧", "Gerekli kondansatör: \(String(format: "%.1f kVAr", computedQcKVAr)) — \(stepCountOption) kademe × \(String(format: "%.0f kVAr", stepStd))")
+                summaryLine("💰", "Tahmini toplam yatırım: \(inv.currencyFormatted)")
+                summaryLine("📅", "Yatırım geri ödeme: \(pbStr)")
+                summaryLine("✅", "Kompanzasyon sonrası TEDAŞ cezası sıfıra iner, trafo kapasitesi artar.")
+            }
+        }
+        .padding(18).glassCard(borderColor: Color.green.opacity(0.35))
+    }
+
+    private func summaryLine(_ emoji: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(emoji).font(.system(size: 14))
+            Text(text).font(.system(size: 13, design: .rounded)).foregroundStyle(.white.opacity(0.85))
+        }
+    }
+
+    private var technicalSummaryCard: some View {
+        let stepStd = nearestStandard(computedQcKVAr / Double(max(1, stepCountOption)))
+        let (rlabel, _, _, _) = reactorInfo
+        return VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "doc.text.fill").foregroundStyle(amber)
+                Text("Teknik Özet").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            rptRow("Kompanzasyon Gücü",    String(format: "%.1f kVAr", computedQcKVAr), .orange)
+            rptRow("Kademe",               "\(stepCountOption) × \(String(format: "%.0f kVAr", stepStd))", .purple)
+            rptRow("Pano Tipi",            computedQcKVAr > 50 ? "Otomatik (AKP)" : "Sabit Kondansatör", .white)
+            rptRow("Reaktör",              rlabel, thdPercent >= 5 ? .orange : .green)
+            rptRow("Yöntem",               compMethod.label, .cyan)
+            rptRow("Tesis",                facilityType.label, .white)
+            rptRow("Gerilim",              "\(systemVoltage) V", .white)
+            rptRow("THD",                  String(format: "%.1f%%", thdPercent), thdPercent < 5 ? .green : thdPercent < 8 ? .orange : .red)
+        }
+        .padding(18).glassCard(borderColor: amber.opacity(0.35))
+    }
+
+    private func rptRow(_ label: String, _ value: String, _ color: Color) -> some View {
         HStack {
             Text(label).font(.system(size: 13, design: .rounded)).foregroundStyle(.white.opacity(0.75))
             Spacer()
@@ -1344,94 +1258,216 @@ struct CompensationCalculatorView: View {
         }
     }
 
-    private func standardBadge(standard: String, desc: String) -> some View {
+    private var standardsCard: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                Text("Standart Uyumluluk").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            stdBadge("IEC 61921",      "Power factor correction capacitors")
+            stdBadge("EN 60831",       "Shunt power capacitors — self-healing type")
+            stdBadge("IEC 61000-3-12", "Harmonics — Industrial systems >16A")
+            stdBadge("TS EN 50160",    "Şebeke gerilim karakteristikleri")
+            stdBadge("IEC 60947-4-1",  "Kontaktör seçimi — inrush × 1.43")
+        }
+        .padding(18).glassCard(borderColor: Color.green.opacity(0.3))
+    }
+
+    private func stdBadge(_ std: String, _ desc: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(Color.green)
+            Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundStyle(.green)
             VStack(alignment: .leading, spacing: 1) {
-                Text(standard).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                Text(std).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
                 Text(desc).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
             }
             Spacer()
         }
     }
 
+    private var actionButtonsView: some View {
+        VStack(spacing: 12) {
+            Button {
+                guard computedCosPhi > 0, computedCosPhi < targetCosPhi else { return }
+                let pKW = effectiveActivePowerKW
+                let sKVA = effectiveApparentPowerKVA
+                let input = CompensationInput(
+                    activePowerKW: pKW,
+                    apparentPowerKVA: sKVA,
+                    measuredCosPhi: max(0.001, min(computedCosPhi, targetCosPhi - 0.001)),
+                    targetCosPhi: targetCosPhi,
+                    systemVoltageV: Double(systemVoltage) ?? 400,
+                    transformerKVA: Double(transformerKVA),
+                    totalHarmonicDistortion: thdPercent,
+                    electricityTariff: penaltyRate,
+                    investmentCostTL: totalInvestment
+                )
+                if let result = try? CompensationEngine.calculate(input: input) {
+                    pendingQuoteItems = QuoteEngine.itemsFromCompensation(result)
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    showCustomerPicker = true
+                }
+            } label: {
+                Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
+                    .font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.black)
+                    .frame(maxWidth: .infinity).padding(.vertical, 15)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(amber).shadow(color: amber.opacity(0.4), radius: 8, y: 4))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                let pdfData = PDFService.generateCompensationReportPDF(
+                    activePowerKW:    effectiveActivePowerKW,
+                    apparentPowerKVA: effectiveApparentPowerKVA,
+                    currentCosPhi:    computedCosPhi,
+                    targetCosPhi:     targetCosPhi,
+                    requiredQcKVAr:   computedQcKVAr,
+                    thdPercent:       thdPercent,
+                    penaltyRate:      penaltyRate,
+                    monthlySaving:    computedMonthlySaving,
+                    investmentCost:   totalInvestment,
+                    transformerKVA:   Double(transformerKVA) ?? 250,
+                    settings:         persistence.settings
+                )
+                ShareService.sharePDF(data: pdfData, filename: "Kompanzasyon-Raporu")
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } label: {
+                Label("PDF Raporu", systemImage: "doc.richtext.fill")
+                    .font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity).padding(.vertical, 15)
+                    .background(RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.orange.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.orange, lineWidth: 1)))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     // MARK: - Hesaplamalar
 
+    private var invoiceDerivedValues: (p: Double, s: Double, cosPhi: Double) {
+        let kwh = Double(monthlyKWh) ?? 0
+        let qi  = Double(monthlyKVArhInd) ?? 0
+        let qc  = Double(monthlyKVArhCap) ?? 0
+        guard kwh > 0 else { return (0, 0, 1.0) }
+        let netQ  = qi - qc
+        let sKVAh = sqrt(kwh * kwh + netQ * netQ)
+        let cos   = sKVAh > 0 ? min(1.0, kwh / sKVAh) : 1.0
+        return (kwh / 720.0, sKVAh / 720.0, cos)
+    }
+
+    private var effectiveActivePowerKW: Double {
+        switch inputMode {
+        case .instant: return Double(activePowerKW) ?? 0
+        case .invoice: return invoiceDerivedValues.p
+        }
+    }
+
+    private var effectiveApparentPowerKVA: Double {
+        switch inputMode {
+        case .instant: return Double(apparentPowerKVA) ?? 0
+        case .invoice: return invoiceDerivedValues.s
+        }
+    }
+
     private func recalculate() {
-        let p  = Double(activePowerKW) ?? 0
-        let s  = Double(apparentPowerKVA) ?? 0
-        guard s > 0 else { currentCosPhi = 0; return }
+        let p = effectiveActivePowerKW
+        let s = effectiveApparentPowerKVA
+        guard s > 0 else { computedCosPhi = 0; return }
 
-        let cosPhi1 = p / s
-        currentCosPhi = cosPhi1
+        let cos: Double
+        if inputMode == .instant && useDirectCosPhi {
+            cos = max(0.001, min(Double(directCosPhiStr) ?? (p / s), 0.9999))
+        } else {
+            cos = p / s
+        }
+        computedCosPhi = cos
 
-        let phi1 = acos(cosPhi1)
+        let phi1 = acos(max(0.001, min(cos, 0.9999)))
         let phi2 = acos(targetCosPhi)
-        let qc = p * (tan(phi1) - tan(phi2))
-        requiredQcKVAr = max(0, qc)
+        computedQcKVAr = max(0, p * (tan(phi1) - tan(phi2)))
 
-        // Aylık tasarruf: TEDAŞ ceza kaçınımı + bakır kaybı azalması
-        monthlySaving = requiredQcKVAr * 720 * penaltyRate
+        let qReactive     = sqrt(max(0, s * s - p * p))
+        let penaltyQ      = max(0, qReactive - p * 0.33)
+        computedMonthlySaving = penaltyQ * 720 * penaltyRate
+    }
+
+    // MARK: - Computed Helpers
+
+    private var reactorInfo: (label: String, factor: String, color: Color, reason: String) {
+        if thdPercent < 5 {
+            return ("Reaktör Gerekmez", "—", .green, "THD < %5 — şebeke temiz")
+        } else if thdPercent < 8 {
+            return ("%5.67 Detuned Reaktör", "p = 0.0567", .orange, "250 Hz koruma — 5. harmonik")
+        } else if thdPercent < 20 {
+            return ("%7 Detuned Reaktör", "p = 0.07", Color(red:1,green:0.5,blue:0), "189 Hz rezonans — 7. harmonik")
+        } else {
+            return ("%14 / Aktif Filtre", "p = 0.14", .red, "3. harmonik koruması — aktif filtre değerlendirin")
+        }
+    }
+
+    private var defaultCosts: (cap: Double, con: Double, reactor: Double, panel: Double, labor: Double) {
+        let std      = nearestStandard(computedQcKVAr / Double(max(1, stepCountOption)))
+        let cap      = std * Double(stepCountOption) * 150
+        let con      = Double(stepCountOption) * 800
+        let reactor  = thdPercent >= 5 ? std * Double(stepCountOption) * 200 : 0
+        let panel: Double = stepCountOption > 12 ? 18000 : stepCountOption > 6 ? 12000 : 6000
+        let labor    = (cap + con + reactor + panel) * 0.18
+        return (cap, con, reactor, panel, labor)
+    }
+
+    private var totalInvestment: Double {
+        let (dc, dn, dr, dp, dl) = defaultCosts
+        let cap     = Double(capCostStr)       ?? dc
+        let con     = Double(contactorCostStr)  ?? dn
+        let reactor = Double(reactorCostStr)   ?? dr
+        let panel   = Double(panelCostStr)     ?? dp
+        let labor   = Double(laborCostStr)     ?? dl
+        return cap + con + reactor + panel + labor
+    }
+
+    private var monthlySavingsBreakdown: (penalty: Double, copper: Double, total: Double) {
+        let penalty = computedMonthlySaving
+        let trafoKVA = Double(transformerKVA) ?? 250
+        let sKVA = effectiveApparentPowerKVA
+        let pKW  = effectiveActivePowerKW
+        let newQ = max(0, sqrt(max(0, sKVA * sKVA - pKW * pKW)) - computedQcKVAr)
+        let newS = sqrt(pKW * pKW + newQ * newQ)
+        let lossRed = (pow(sKVA / max(1, trafoKVA), 2) - pow(newS / max(1, trafoKVA), 2)) * 100
+        let copper  = max(0, (trafoKVA * 0.015 / 1000.0) * (lossRed / 100) * 720 * penaltyRate)
+        return (penalty, copper, penalty + copper)
     }
 
     // MARK: - Yardımcı Fonksiyonlar
 
-    private func capacitance(kvar: Double) -> Double {
-        let v = 400.0
-        return (kvar * 1000.0) / (2 * Double.pi * frequency * v * v) * 1_000_000
+    private func nearestStandard(_ kvar: Double) -> Double {
+        let s: [Double] = [2.5, 5, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60, 75, 100]
+        return s.min(by: { abs($0 - kvar) < abs($1 - kvar) }) ?? 25
+    }
+
+    private struct StepRow { let kvarEach: Double; let standard: Double; let contactorA: Double }
+
+    private func stepDesign() -> [StepRow] {
+        guard computedQcKVAr > 0, stepCountOption > 0 else { return [] }
+        let v       = Double(systemVoltage) ?? 400
+        let perStep = computedQcKVAr / Double(stepCountOption)
+        let std     = nearestStandard(perStep)
+        let ia      = (std * 1000) / (sqrt(3) * v) * 1.43
+        return (0..<stepCountOption).map { _ in StepRow(kvarEach: perStep, standard: std, contactorA: ia) }
     }
 
     private func nearestSteps(total: Double, options: [Double]) -> [Double] {
-        var remaining = total
-        var result: [Double] = []
-        for step in options.sorted(by: >) {
-            while remaining >= step {
-                result.append(step)
-                remaining -= step
-            }
-        }
-        return result.sorted(by: >)
+        var rem = total; var res: [Double] = []
+        for s in options.sorted(by: >) { while rem >= s { res.append(s); rem -= s } }
+        return res.sorted(by: >)
     }
 
     private func inputFieldRow(label: String, binding: Binding<String>, keyboard: UIKeyboardType) -> some View {
         HStack {
-            Text(label)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.8))
+            Text(label).font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.8))
             Spacer()
-            TextField("0", text: binding)
-                .keyboardType(keyboard)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 100)
-                .styledInput()
-        }
-    }
-}
-
-// MARK: - Arc Shape
-
-/// Daire yayı — cos φ gauge için
-struct Arc: Shape {
-    var startAngle: Angle
-    var endAngle: Angle
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addArc(
-            center: CGPoint(x: rect.midX, y: rect.midY),
-            radius: rect.width / 2,
-            startAngle: startAngle,
-            endAngle: endAngle,
-            clockwise: false
-        )
-        return path
-    }
-
-    var animatableData: AnimatablePair<Double, Double> {
-        get { AnimatablePair(startAngle.degrees, endAngle.degrees) }
-        set {
-            startAngle = .degrees(newValue.first)
-            endAngle   = .degrees(newValue.second)
+            TextField("0", text: binding).keyboardType(keyboard)
+                .multilineTextAlignment(.trailing).frame(width: 110).styledInput()
         }
     }
 }
@@ -1439,8 +1475,6 @@ struct Arc: Shape {
 // MARK: - Preview
 
 #Preview {
-    NavigationStack {
-        CompensationCalculatorView()
-    }
-    .preferredColorScheme(.dark)
+    NavigationStack { CompensationCalculatorView() }
+        .preferredColorScheme(.dark)
 }

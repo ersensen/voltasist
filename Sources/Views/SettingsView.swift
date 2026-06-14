@@ -33,6 +33,7 @@ struct SettingsView: View {
                     solarSection
                     compensationSection
                     quoteSection
+                    helpCardsSection
                     dangerZone
                     Spacer(minLength: 30)
                 }
@@ -176,6 +177,40 @@ struct SettingsView: View {
                     .foregroundColor(amber)
             }
         }
+    }
+
+    // MARK: - Yardım Kartları
+
+    private var helpCardsSection: some View {
+        settingsCard(title: "ℹ️ Yardım Kartları", icon: "info.circle.fill") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Kapatılan Nasıl Kullanılır? ve Saha Rehberi kartlarını tüm ekranlarda tekrar gösterir.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                Button(action: resetHelpCards) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text("Yardım kartlarını sıfırla")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(amber)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .background(amber.opacity(0.07))
+                    .cornerRadius(10)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(amber.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func resetHelpCards() {
+        let keys = ["hideUsageNoteKablo", "hideUsageNoteYuk", "hideUsageNoteSolar", "hideCompFieldGuide"]
+        keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
     }
 
     // MARK: - Tehlike Bölgesi

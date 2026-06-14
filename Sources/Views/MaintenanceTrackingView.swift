@@ -235,6 +235,7 @@ struct MaintenanceRecordDetailView: View {
     @State private var showAddReading  = false
     @State private var showEditRecord  = false
     @State private var showAddVisit    = false
+    @State private var showDetails     = false
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -251,14 +252,23 @@ struct MaintenanceRecordDetailView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
+                // Üst: risk skoru + 3 kritik metrik
                 facilityRiskCard
-                recordInfoCard
-                if let latest = sortedReadings.first { currentStatusCard(latest) }
-                if localRecord.readings.count >= 2 { trendChartCard }
-                if localRecord.readings.count >= 4 { cosPhiTrendInsightCard }
-                if !localRecord.readings.isEmpty { annualSummaryCard }
-                capacitorHealthCard
-                recommendationsCard
+                criticalMetricsCard
+
+                // Detaylar accordion (varsayılan kapalı)
+                detailsToggleButton
+                if showDetails {
+                    recordInfoCard
+                    if let latest = sortedReadings.first { currentStatusCard(latest) }
+                    if localRecord.readings.count >= 2 { trendChartCard }
+                    if localRecord.readings.count >= 4 { cosPhiTrendInsightCard }
+                    if !localRecord.readings.isEmpty { annualSummaryCard }
+                    capacitorHealthCard
+                    recommendationsCard
+                }
+
+                // Her zaman görünür: ölçüm ve ziyaret geçmişi
                 readingListCard
                 visitHistoryCard
             }
@@ -475,6 +485,85 @@ struct MaintenanceRecordDetailView: View {
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.purple.opacity(0.07))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.purple.opacity(0.3), lineWidth: 1)))
+    }
+
+    // MARK: Kritik Metrik Kartı
+
+    private var criticalMetricsCard: some View {
+        let latest = sortedReadings.first
+        let cp = latest?.cosPhi
+        let cpColor: Color = cp.map { $0 >= 0.95 ? .green : $0 >= 0.90 ? .orange : .red } ?? .gray
+        let last12 = Array(localRecord.readings.sorted { $0.date > $1.date }.prefix(12))
+        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty }
+
+        return HStack(spacing: 0) {
+            criticalCell(
+                icon: "calendar.badge.clock",
+                label: "Sonraki Bakım",
+                value: localRecord.nextCheckDate.formatted(.dateTime.day().month(.abbreviated).year()),
+                color: localRecord.isOverdue ? .red : localRecord.isDueSoon ? .yellow : .green
+            )
+            Divider().background(Color.white.opacity(0.1)).frame(height: 56)
+            criticalCell(
+                icon: "gauge.medium",
+                label: "Son cos φ",
+                value: cp.map { String(format: "%.3f", $0) } ?? "—",
+                color: cpColor
+            )
+            Divider().background(Color.white.opacity(0.1)).frame(height: 56)
+            criticalCell(
+                icon: "turkishlirasign.circle.fill",
+                label: "Yıllık Ceza",
+                value: totalPenalty > 0 ? totalPenalty.currencyFormatted : "0 ₺",
+                color: totalPenalty > 0 ? .red : .green
+            )
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.10, green: 0.10, blue: 0.13))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.2), lineWidth: 1))
+        )
+    }
+
+    private func criticalCell(icon: String, label: String, value: String, color: Color) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
+            Text(value)
+                .font(.system(size: 15, weight: .black, design: .rounded))
+                .foregroundStyle(color)
+                .minimumScaleFactor(0.55)
+                .lineLimit(1)
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.gray)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var detailsToggleButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                showDetails.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: showDetails ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(showDetails ? "Detayları Gizle" : "Detayları Göster")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(.gray.opacity(0.7))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.04))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func summaryMetric(_ label: String, value: String, color: Color) -> some View {

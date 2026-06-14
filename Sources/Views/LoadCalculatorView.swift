@@ -6,6 +6,17 @@
 
 import SwiftUI
 
+// MARK: - Geçmiş Kaydı
+
+private struct LoadHistoryEntry: Codable, Identifiable {
+    var id: UUID = UUID()
+    let date: Date
+    let loads: [LoadItem]
+    let cosPhi: Double
+    let demandFactor: Double
+    let unitPrice: Double
+}
+
 // MARK: - LoadCalculatorView
 
 /// Yük listesi ve güç hesap ekranı — tam premium UI
@@ -31,7 +42,10 @@ struct LoadCalculatorView: View {
     @State private var showCustomerPicker      = false
 
     @AppStorage("pendingCableKW") private var pendingCableKW: Double = 0
+    @AppStorage("hideUsageNoteYuk") private var hideUsageNote: Bool = false
     @EnvironmentObject private var persistence: PersistenceService
+    @State private var loadHistory: [LoadHistoryEntry] = []
+    @State private var showHistory: Bool = false
 
     // MARK: Tasarım
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
@@ -41,8 +55,11 @@ struct LoadCalculatorView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
-                // Kullanım talimatı
-                loadUsageNote
+                // Kullanım talimatı (kapatılabilir)
+                if !hideUsageNote { loadUsageNote }
+
+                // Son Hesaplar
+                if !loadHistory.isEmpty { loadHistoryAccordion }
 
                 // Sistem parametreleri
                 systemParamsCard
@@ -98,6 +115,7 @@ struct LoadCalculatorView: View {
             }
         }
         .onChange(of: showAddSheet) { _, _ in editingLoad = nil }
+        .onAppear { loadLoadHistory() }
     }
 
     // MARK: - Kullanım Talimatı
@@ -117,6 +135,14 @@ struct LoadCalculatorView: View {
                     .foregroundStyle(.white.opacity(0.65))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Button {
+                withAnimation { hideUsageNote = true }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.gray.opacity(0.45))
+                    .font(.system(size: 18))
+            }
+            .buttonStyle(.plain)
         }
         .padding(14)
         .background(
@@ -424,6 +450,91 @@ struct LoadCalculatorView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Geçmiş Bölümü
+
+    private var loadHistoryAccordion: some View {
+        let cardBG = Color(red: 0.086, green: 0.090, blue: 0.114)
+        let cardBorder = Color(red: 0.133, green: 0.137, blue: 0.161)
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) { showHistory.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(amber)
+                    Text("Son Hesaplar")
+                        .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Spacer()
+                    Text("\(loadHistory.count)")
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(amber))
+                    Image(systemName: showHistory ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.gray.opacity(0.6))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            if showHistory {
+                Divider().background(Color.white.opacity(0.08))
+                VStack(spacing: 0) {
+                    ForEach(loadHistory) { entry in
+                        Button { restoreLoadHistory(entry) } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                                    Text("\(entry.loads.count) cihaz · cos φ \(String(format: "%.2f", entry.cosPhi)) · TF \(String(format: "%.2f", entry.demandFactor))")
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.uturn.left.circle")
+                                    .font(.system(size: 16)).foregroundStyle(.gray.opacity(0.5))
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        if entry.id != loadHistory.last?.id {
+                            Divider().background(Color.white.opacity(0.06)).padding(.leading, 14)
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(cardBG)
+        .cornerRadius(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(amber.opacity(0.18), lineWidth: 1))
+    }
+
+    private func loadLoadHistory() {
+        guard let data = UserDefaults.standard.data(forKey: "loadCalcHistory"),
+              let decoded = try? JSONDecoder().decode([LoadHistoryEntry].self, from: data)
+        else { return }
+        loadHistory = decoded
+    }
+
+    private func saveLoadHistory() {
+        guard !loads.isEmpty else { return }
+        let entry = LoadHistoryEntry(date: Date(), loads: loads,
+                                    cosPhi: cosPhi, demandFactor: demandFactor, unitPrice: unitPrice)
+        var h = loadHistory
+        h.insert(entry, at: 0)
+        loadHistory = Array(h.prefix(5))
+        if let encoded = try? JSONEncoder().encode(loadHistory) {
+            UserDefaults.standard.set(encoded, forKey: "loadCalcHistory")
+        }
+    }
+
+    private func restoreLoadHistory(_ entry: LoadHistoryEntry) {
+        loads = entry.loads
+        cosPhi = entry.cosPhi
+        demandFactor = entry.demandFactor
+        unitPrice = entry.unitPrice
+        autoCalculate()
+    }
+
     // MARK: - Hesaplama
 
     private func autoCalculate() {
@@ -446,6 +557,7 @@ struct LoadCalculatorView: View {
             result = res
             resultVisible = true
         }
+        saveLoadHistory()
         let impact = UINotificationFeedbackGenerator()
         impact.notificationOccurred(.success)
     }

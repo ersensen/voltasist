@@ -151,6 +151,9 @@ struct CompensationCalculatorView: View {
     @State private var panelCostStr:     String = ""
     @State private var laborCostStr:     String = ""
 
+    // Yardım kartı görünürlüğü
+    @AppStorage("hideCompFieldGuide") private var hideFieldGuide: Bool = false
+
     // Quote
     @State private var showQuoteAdded:   Bool = false
     @State private var pendingQuoteItems: [QuoteItem] = []
@@ -239,7 +242,7 @@ struct CompensationCalculatorView: View {
                 Text(tab.title).font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
             }
             .foregroundStyle(isSelected ? Color.black : Color.gray.opacity(0.65))
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 12).padding(.vertical, 12)
             .background(Capsule()
                 .fill(isSelected ? Color.purple : Color(red: 0.15, green: 0.15, blue: 0.18))
                 .shadow(color: isSelected ? Color.purple.opacity(0.4) : .clear, radius: 6))
@@ -289,7 +292,7 @@ struct CompensationCalculatorView: View {
                             Text(mode.label).font(.system(size: 13, weight: .semibold, design: .rounded))
                         }
                         .foregroundStyle(inputMode == mode ? .black : .gray)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 10)
                             .fill(inputMode == mode ? amber : Color.white.opacity(0.07)))
                     }
@@ -315,7 +318,7 @@ struct CompensationCalculatorView: View {
                             Text(ft.label).font(.system(size: 10, weight: .semibold, design: .rounded))
                         }
                         .foregroundStyle(facilityType == ft ? .black : .gray)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 10)
                             .fill(facilityType == ft ? Color.cyan : Color.white.opacity(0.07)))
                     }
@@ -347,7 +350,7 @@ struct CompensationCalculatorView: View {
                             Text(m.label).font(.system(size: 10, weight: .semibold, design: .rounded))
                         }
                         .foregroundStyle(compMethod == m ? .black : .gray)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 10)
                             .fill(compMethod == m ? Color.purple : Color.white.opacity(0.07)))
                     }
@@ -375,7 +378,7 @@ struct CompensationCalculatorView: View {
                             Text(lp.label).font(.system(size: 10, weight: .semibold, design: .rounded))
                         }
                         .foregroundStyle(loadProfile == lp ? .black : .gray)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(RoundedRectangle(cornerRadius: 10)
                             .fill(loadProfile == lp ? Color.orange : Color.white.opacity(0.07)))
                     }
@@ -790,27 +793,50 @@ struct CompensationCalculatorView: View {
     private var fieldTab: some View {
         VStack(spacing: 16) {
             peakAverageCard
-            fieldGuideCard(icon: "number.circle.fill", color: .cyan, title: "1. OSOS / Sayaç Okuma",
-                steps: ["Dağıtım tablosundaki OSOS cihazına veya akıllı sayaca erişin.",
-                        "Aktif enerji (kWh), endüktif reaktif (kVArh) ve kapasitif reaktif (kVArh) değerlerini not alın.",
-                        "Aylık faturadaki 'Reaktif Bedel' satırı TEDAŞ'ın hesapladığı cezayı gösterir.",
-                        "TEDAŞ online sistemi veya OSOS web arayüzünden aylık Excel raporu indirilebilir."])
-            fieldGuideCard(icon: "antenna.radiowaves.left.and.right", color: .purple, title: "2. Güç Analizörü Bağlantısı",
-                steps: ["Akım problarını faz iletkenlerine (R–S–T) takın — ok yönüne dikkat edin.",
-                        "Gerilim problarını MCC giriş baralarına veya pano çıkışına bağlayın.",
-                        "Cihaz otomatik olarak cos φ, THD%, kW, kVA, kVAr hesaplar.",
-                        "En az 15 dakika ölçüm yapın; pik/vadi değerlerini ayrı kaydedin.",
-                        "Önerilen: Fluke 435-II, Hioki PW3360, Chauvin Arnoux CA 8335"])
-            fieldGuideCard(icon: "mappin.circle.fill", color: .orange, title: "3. Ölçüm Noktası",
-                steps: ["Ana tablo (MCC) giriş barası — tesisin toplam yükünü gösterir.",
-                        "Transformatör sekonder çıkışı — kompanzasyon öncesi referans noktası.",
-                        "Grup kompanzasyon: her MCC veya dağıtım tablosunda ayrı ölçüm gerekir.",
-                        "Münferit kompanzasyon: kritik motorların her birinde ayrı cos φ ölçümü."])
-            fieldGuideCard(icon: "clock.fill", color: .green, title: "4. Ölçüm Zamanlaması",
-                steps: ["Tam yük saatinde ölçüm yapın — genellikle mesai başlangıcı 08:00–10:00.",
-                        "Gece 22:00–06:00 arası reaktif enerji 2 kat fiyatlandırılır; bu saati de kaydedin.",
-                        "Sanayi: Pazartesi sabahı soğuk çalışma ile perşembe öğleden sonra tam yükü karşılaştırın.",
-                        "Mevsimsel değişken tesisler için yaz/kış ayrı ölçüm gerekebilir."])
+
+            VStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "map.fill").foregroundStyle(Color.cyan)
+                    Text("Saha Ölçüm Rehberi")
+                        .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                            hideFieldGuide.toggle()
+                        }
+                    } label: {
+                        Image(systemName: hideFieldGuide ? "chevron.down.circle" : "xmark.circle.fill")
+                            .foregroundStyle(.gray.opacity(0.5))
+                            .font(.system(size: 20))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if !hideFieldGuide {
+                    fieldGuideCard(icon: "number.circle.fill", color: .cyan, title: "1. OSOS / Sayaç Okuma",
+                        steps: ["Dağıtım tablosundaki OSOS cihazına veya akıllı sayaca erişin.",
+                                "Aktif enerji (kWh), endüktif reaktif (kVArh) ve kapasitif reaktif (kVArh) değerlerini not alın.",
+                                "Aylık faturadaki 'Reaktif Bedel' satırı TEDAŞ'ın hesapladığı cezayı gösterir.",
+                                "TEDAŞ online sistemi veya OSOS web arayüzünden aylık Excel raporu indirilebilir."])
+                    fieldGuideCard(icon: "antenna.radiowaves.left.and.right", color: .purple, title: "2. Güç Analizörü Bağlantısı",
+                        steps: ["Akım problarını faz iletkenlerine (R–S–T) takın — ok yönüne dikkat edin.",
+                                "Gerilim problarını MCC giriş baralarına veya pano çıkışına bağlayın.",
+                                "Cihaz otomatik olarak cos φ, THD%, kW, kVA, kVAr hesaplar.",
+                                "En az 15 dakika ölçüm yapın; pik/vadi değerlerini ayrı kaydedin.",
+                                "Önerilen: Fluke 435-II, Hioki PW3360, Chauvin Arnoux CA 8335"])
+                    fieldGuideCard(icon: "mappin.circle.fill", color: .orange, title: "3. Ölçüm Noktası",
+                        steps: ["Ana tablo (MCC) giriş barası — tesisin toplam yükünü gösterir.",
+                                "Transformatör sekonder çıkışı — kompanzasyon öncesi referans noktası.",
+                                "Grup kompanzasyon: her MCC veya dağıtım tablosunda ayrı ölçüm gerekir.",
+                                "Münferit kompanzasyon: kritik motorların her birinde ayrı cos φ ölçümü."])
+                    fieldGuideCard(icon: "clock.fill", color: .green, title: "4. Ölçüm Zamanlaması",
+                        steps: ["Tam yük saatinde ölçüm yapın — genellikle mesai başlangıcı 08:00–10:00.",
+                                "Gece 22:00–06:00 arası reaktif enerji 2 kat fiyatlandırılır; bu saati de kaydedin.",
+                                "Sanayi: Pazartesi sabahı soğuk çalışma ile perşembe öğleden sonra tam yükü karşılaştırın.",
+                                "Mevsimsel değişken tesisler için yaz/kış ayrı ölçüm gerekebilir."])
+                }
+            }
+            .padding(16).glassCard(borderColor: Color.cyan.opacity(0.2))
         }
     }
 

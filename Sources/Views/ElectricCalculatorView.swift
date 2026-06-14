@@ -109,14 +109,9 @@ struct ElectricCalculatorView: View {
                     .foregroundStyle(amber)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Elektrik Hesapları")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white)
-                Text("IEC 60364 · EN 12464-1")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(Color.gray.opacity(0.6))
-            }
+            Text("Elektrik Hesapları")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white)
 
             Spacer()
         }
@@ -170,7 +165,7 @@ struct ElectricCalculatorView: View {
             }
             .foregroundStyle(isSelected ? Color.black : Color.gray.opacity(0.65))
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, 12)
             .background(
                 Capsule()
                     .fill(isSelected ? tab.color : Color(red: 0.15, green: 0.15, blue: 0.18))

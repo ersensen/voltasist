@@ -42,6 +42,23 @@ enum CableInsulationClass: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Geçmiş Kaydı
+
+private struct CableHistoryEntry: Codable, Identifiable {
+    var id: UUID = UUID()
+    let date: Date
+    let powerKW: String
+    let lengthM: String
+    let cosPhi: String
+    let groupCount: String
+    let isThreePhase: Bool
+    let isCopper: Bool
+    let coreCount: Int
+    let isAuto: Bool
+    let sectionMM2: Double
+    let voltageDrop: Double
+}
+
 // MARK: - CableCalculatorView
 struct CableCalculatorView: View {
 
@@ -75,6 +92,9 @@ struct CableCalculatorView: View {
 
     @EnvironmentObject private var persistence: PersistenceService
     @AppStorage("pendingCableKW") private var pendingCableKW: Double = 0
+    @AppStorage("hideUsageNoteKablo") private var hideUsageNote: Bool = false
+    @State private var calcHistory: [CableHistoryEntry] = []
+    @State private var showHistory: Bool = false
 
     // Tasarım Renkleri (Mockup'tan Birebir Alınan Premium Palet)
     private let amber = Color(red: 1.0, green: 0.75, blue: 0.0) // Kehribar vurgu rengi
@@ -90,8 +110,11 @@ struct CableCalculatorView: View {
                 // Header (Mockup ile birebir aynı)
                 headerSection
 
-                // Kullanım talimatı
-                cableUsageNote
+                // Kullanım talimatı (kapatılabilir)
+                if !hideUsageNote { cableUsageNote }
+
+                // Son Hesaplar
+                if !calcHistory.isEmpty { historyAccordion }
 
                 // Üst Seçim: Otomatik Kesit Önerisi / Manuel Deneme-Yanılma
                 modeSelector
@@ -131,6 +154,7 @@ struct CableCalculatorView: View {
                 powerKW = String(format: "%.2f", pendingCableKW)
                 pendingCableKW = 0
             }
+            loadCalcHistory()
         }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
@@ -179,6 +203,14 @@ struct CableCalculatorView: View {
                     .foregroundColor(.white.opacity(0.65))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Button {
+                withAnimation { hideUsageNote = true }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.gray.opacity(0.45))
+                    .font(.system(size: 18))
+            }
+            .buttonStyle(.plain)
         }
         .padding(14)
         .background(
@@ -662,6 +694,110 @@ struct CableCalculatorView: View {
         case .n2xh: return "Halojensiz / Yangına Güvenli"
         }
     }
+    // MARK: - Geçmiş Bölümü
+
+    private var historyAccordion: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) { showHistory.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(amber)
+                    Text("Son Hesaplar")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("\(calcHistory.count)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(amber))
+                    Image(systemName: showHistory ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.gray.opacity(0.6))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            if showHistory {
+                Divider().background(Color.white.opacity(0.08))
+                VStack(spacing: 0) {
+                    ForEach(calcHistory) { entry in
+                        Button { restoreFromHistory(entry) } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                                    Text("\(entry.powerKW) kW · \(entry.lengthM) m · \(entry.isThreePhase ? "3F" : "1F")")
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text(String(format: "%.1f mm²", entry.sectionMM2))
+                                        .font(.system(size: 14, weight: .black, design: .rounded)).foregroundStyle(amber)
+                                    Text(String(format: "Δu %.2f%%", entry.voltageDrop))
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundStyle(entry.voltageDrop <= 3.0 ? .green : .red)
+                                }
+                                Image(systemName: "arrow.uturn.left.circle")
+                                    .font(.system(size: 16)).foregroundStyle(.gray.opacity(0.5))
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        if entry.id != calcHistory.last?.id {
+                            Divider().background(Color.white.opacity(0.06)).padding(.leading, 14)
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(cardBG)
+        .cornerRadius(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(amber.opacity(0.18), lineWidth: 1))
+    }
+
+    private func loadCalcHistory() {
+        guard let data = UserDefaults.standard.data(forKey: "cableCalcHistory"),
+              let decoded = try? JSONDecoder().decode([CableHistoryEntry].self, from: data)
+        else { return }
+        calcHistory = decoded
+    }
+
+    private func saveToHistory(_ res: CableCalculationResult) {
+        let entry = CableHistoryEntry(
+            date: Date(),
+            powerKW: powerKW, lengthM: lengthM, cosPhi: cosPhi,
+            groupCount: groupCount, isThreePhase: isThreePhase,
+            isCopper: isCopper, coreCount: coreCount, isAuto: isAuto,
+            sectionMM2: res.recommendedSectionMM2,
+            voltageDrop: res.voltageDrop
+        )
+        var h = calcHistory
+        h.insert(entry, at: 0)
+        calcHistory = Array(h.prefix(5))
+        if let encoded = try? JSONEncoder().encode(calcHistory) {
+            UserDefaults.standard.set(encoded, forKey: "cableCalcHistory")
+        }
+    }
+
+    private func restoreFromHistory(_ entry: CableHistoryEntry) {
+        powerKW = entry.powerKW
+        lengthM = entry.lengthM
+        cosPhi = entry.cosPhi
+        groupCount = entry.groupCount
+        isThreePhase = entry.isThreePhase
+        isCopper = entry.isCopper
+        coreCount = entry.coreCount
+        isAuto = entry.isAuto
+        resultVisible = false
+        calculate()
+    }
+
     // MARK: - Hesaplama Tetikleyicisi
     private func calculate() {
         guard let power = Double(powerKW.replacingOccurrences(of: ",", with: ".")),
@@ -705,6 +841,8 @@ struct CableCalculatorView: View {
                     warningShake = false
                 }
             }
+
+            saveToHistory(res)
 
             let impact = UINotificationFeedbackGenerator()
             impact.notificationOccurred(.success)

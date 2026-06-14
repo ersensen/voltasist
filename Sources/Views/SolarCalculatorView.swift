@@ -7,6 +7,14 @@
 import SwiftUI
 import Charts
 
+// MARK: - Geçmiş Kaydı
+
+private struct SolarHistoryEntry: Codable, Identifiable {
+    var id: UUID = UUID()
+    let date: Date
+    let input: SolarCalculationInput
+}
+
 // MARK: - SolarCalculatorView
 
 /// Solar enerji hesaplama ana ekranı.
@@ -19,6 +27,9 @@ struct SolarCalculatorView: View {
     @State private var showQuoteAlert = false
     @State private var pendingQuoteItems: [QuoteItem] = []
     @State private var showCustomerPicker = false
+    @AppStorage("hideUsageNoteSolar") private var hideUsageNote: Bool = false
+    @State private var solarHistory: [SolarHistoryEntry] = []
+    @State private var showHistory: Bool = false
 
     // MARK: State — Panel Gücü (Wp) — malzeme listesi için kullanıcı tarafından değiştirilebilir
     @State private var panelWp          : Double = 400      // varsayılan 400Wp
@@ -52,8 +63,11 @@ struct SolarCalculatorView: View {
                     // Başlık
                     solarHeader
 
-                    // Kullanım talimatı
-                    solarUsageNote
+                    // Kullanım talimatı (kapatılabilir)
+                    if !hideUsageNote { solarUsageNote }
+
+                    // Son Hesaplar
+                    if !solarHistory.isEmpty { solarHistoryAccordion }
 
                     // Parametreler
                     parametersCard
@@ -91,6 +105,7 @@ struct SolarCalculatorView: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .navigationBarHidden(true)
+        .onAppear { loadSolarHistory() }
         .sheet(isPresented: $showCityPicker) {
             CityPickerSheet(selectedCity: $vm.input.city, searchText: $vm.citySearchText)
         }
@@ -155,6 +170,14 @@ struct SolarCalculatorView: View {
                     .foregroundColor(.white.opacity(0.65))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Button {
+                withAnimation { hideUsageNote = true }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.gray.opacity(0.45))
+                    .font(.system(size: 18))
+            }
+            .buttonStyle(.plain)
         }
         .padding(14)
         .background(
@@ -408,8 +431,93 @@ struct SolarCalculatorView: View {
 
     // MARK: - Hesapla Butonu
 
+    // MARK: - Solar Geçmiş Bölümü
+
+    private var solarHistoryAccordion: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) { showHistory.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(sunGold)
+                    Text("Son Hesaplar")
+                        .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Spacer()
+                    Text("\(solarHistory.count)")
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.black)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(sunGold))
+                    Image(systemName: showHistory ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.gray.opacity(0.6))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            if showHistory {
+                Divider().background(Color.white.opacity(0.08))
+                VStack(spacing: 0) {
+                    ForEach(solarHistory) { entry in
+                        Button { restoreSolarHistory(entry) } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                                    Text("\(entry.input.city.rawValue) · \(String(format: "%.1f kW", entry.input.demandKW))")
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.uturn.left.circle")
+                                    .font(.system(size: 16)).foregroundStyle(.gray.opacity(0.5))
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        if entry.id != solarHistory.last?.id {
+                            Divider().background(Color.white.opacity(0.06)).padding(.leading, 14)
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(Color(red: 0.09, green: 0.09, blue: 0.12))
+        .cornerRadius(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(sunGold.opacity(0.18), lineWidth: 1))
+    }
+
+    private func loadSolarHistory() {
+        guard let data = UserDefaults.standard.data(forKey: "solarCalcHistory"),
+              let decoded = try? JSONDecoder().decode([SolarHistoryEntry].self, from: data)
+        else { return }
+        solarHistory = decoded
+    }
+
+    private func saveSolarHistory() {
+        let entry = SolarHistoryEntry(date: Date(), input: vm.input)
+        var h = solarHistory
+        h.insert(entry, at: 0)
+        solarHistory = Array(h.prefix(5))
+        if let encoded = try? JSONEncoder().encode(solarHistory) {
+            UserDefaults.standard.set(encoded, forKey: "solarCalcHistory")
+        }
+    }
+
+    private func restoreSolarHistory(_ entry: SolarHistoryEntry) {
+        vm.input = entry.input
+        performCalculation()
+    }
+
+    private func performCalculation() {
+        vm.calculate()
+        saveSolarHistory()
+    }
+
+    // MARK: - Hesapla Butonu
+
     private var calculateButton: some View {
-        Button(action: { vm.calculate() }) {
+        Button(action: { performCalculation() }) {
             HStack(spacing: 10) {
                 Image(systemName: "sun.max.fill")
                     .font(.system(size: 16, weight: .bold))

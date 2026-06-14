@@ -84,15 +84,7 @@ struct DashboardView: View {
         .offset(y: appeared ? 0 : -8)
     }
 
-    private var greetingText: String {
-        let h = Calendar.current.component(.hour, from: Date())
-        switch h {
-        case 6..<12:  return "Günaydın! ☀️"
-        case 12..<17: return "İyi günler! 💪"
-        case 17..<21: return "İyi akşamlar! 🌆"
-        default:      return "İyi geceler! 🌙"
-        }
-    }
+    private var greetingText: String { "Merhaba" }
 
     // MARK: KPI
 
@@ -155,9 +147,8 @@ struct DashboardView: View {
                         .stroke(color.opacity(0.25), lineWidth: 1)
                 )
         )
-        .scaleEffect(appeared ? 1 : 0.9)
         .opacity(appeared ? 1 : 0)
-        .animation(.spring(response: 0.45, dampingFraction: 0.75).delay(Double(index) * 0.06), value: appeared)
+        .animation(.easeIn(duration: 0.25), value: appeared)
     }
 
     // MARK: Maintenance Pending Card

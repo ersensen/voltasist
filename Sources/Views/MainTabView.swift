@@ -8,32 +8,32 @@ import SwiftUI
 // MARK: - AppTab
 
 enum AppTab: Int, CaseIterable {
-    case calculators = 0
-    case solar       = 1
-    case materials   = 2
-    case engineering = 3
-    case maintenance = 4
-    case dashboard   = 5
+    case dashboard   = 0
+    case calculators = 1
+    case solar       = 2
+    case materials   = 3
+    case engineering = 4
+    case maintenance = 5
 
     var title: String {
         switch self {
-        case .calculators: return "Mühendislik"
-        case .solar:       return "Solar Güneş"
-        case .materials:   return "Malzeme Listesi"
+        case .dashboard:   return "Ana Sayfa"
+        case .calculators: return "Hesaplar"
+        case .solar:       return "Solar"
+        case .materials:   return "Malzeme"
         case .engineering: return "Teklif"
         case .maintenance: return "Bakım Takip"
-        case .dashboard:   return "Dashboard"
         }
     }
 
     var icon: String {
         switch self {
+        case .dashboard:   return "house.fill"
         case .calculators: return "bolt.fill"
         case .solar:       return "sun.max.fill"
         case .materials:   return "list.bullet"
         case .engineering: return "doc.text.fill"
         case .maintenance: return "wrench.and.screwdriver.fill"
-        case .dashboard:   return "house.fill"
         }
     }
 }
@@ -42,7 +42,7 @@ enum AppTab: Int, CaseIterable {
 
 struct MainTabView: View {
 
-    @State private var selectedTab: AppTab = .calculators
+    @State private var selectedTab: AppTab = .dashboard
     @EnvironmentObject private var persistence: PersistenceService
 
     private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
@@ -82,7 +82,14 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            // Kablo / Yük / Aydınlatma / Kompanzasyon hesap ekranları
+            NavigationStack {
+                DashboardView()
+            }
+            .tabItem {
+                Label(AppTab.dashboard.title, systemImage: AppTab.dashboard.icon)
+            }
+            .tag(AppTab.dashboard)
+
             NavigationStack {
                 ElectricCalculatorView()
             }
@@ -122,15 +129,6 @@ struct MainTabView: View {
                 Label(AppTab.maintenance.title, systemImage: AppTab.maintenance.icon)
             }
             .tag(AppTab.maintenance)
-
-            // Dashboard — QuoteBuilderView'a EngineeringPanelView üzerinden erişilebilir
-            NavigationStack {
-                DashboardView()
-            }
-            .tabItem {
-                Label(AppTab.dashboard.title, systemImage: AppTab.dashboard.icon)
-            }
-            .tag(AppTab.dashboard)
         }
         .tint(amber)
         .background(bgColor.ignoresSafeArea())

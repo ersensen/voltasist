@@ -19,6 +19,18 @@ struct SolarCalculatorView: View {
     @State private var addedToQuote  = false
     @State private var showQuoteAlert = false
 
+    // MARK: State — Malzeme Birim Fiyatları (₺, KDV dahil, 2026 piyasası)
+    @State private var pricePanel       : Double = 2_200    // 400Wp monokristalin panel
+    @State private var priceInverter    : Double = 22_000   // inverter (tam ünite, 5kW ref.)
+    @State private var priceBattery     : Double = 10_500   // 100Ah/12V LiFePO4 batarya
+    @State private var priceMountRail   : Double = 280      // montaj sacı + alüm. ray (panel/set)
+    @State private var priceDCCable     : Double = 32       // DC solar kablo PV1-F 4mm² (₺/m)
+    @State private var priceACCable     : Double = 65       // AC kablo NYY 3×4mm² (₺/m)
+    @State private var priceFuse        : Double = 160      // DC string sigorta + tutucu (adet)
+    @State private var priceGrounding   : Double = 1_800    // topraklama seti (set)
+    @State private var priceRoofHook    : Double = 130      // çatı kancası alüm. (adet)
+    @State private var priceJunctionBox : Double = 550      // junction box / DC combiner (adet)
+
     // Amber-Solar renk sistemi
     private let sunGold   = Color(red: 1.0,  green: 0.80, blue: 0.10)
     private let sunOrange = Color(red: 1.0,  green: 0.55, blue: 0.10)
@@ -45,6 +57,7 @@ struct SolarCalculatorView: View {
                     // Sonuçlar (hesaplandıktan sonra görünür)
                     if let result = vm.result, vm.showResult {
                         resultTabs(result: result)
+                        solarMaterialListSection(result: result)
                     }
 
                     Spacer(minLength: 30)
@@ -504,6 +517,170 @@ struct SolarCalculatorView: View {
         .cornerRadius(16)
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.2), lineWidth: 1))
         .padding(.horizontal, 2)
+    }
+
+    // MARK: - Malzeme Listesi
+
+    private func solarMaterialListSection(result: SolarCalculationResult) -> some View {
+        let panelQty  = Double(result.panelCount)
+        let batQty    = Double(result.batteryCount)
+        let dcCableM  = Double(result.panelCount * 10)   // panel başına ~10m DC kablo
+        let hookQty   = Double(result.panelCount * 4)    // panel başına 4 kanca
+        let fuseQty   = Double(max(1, result.panelCount / 4))
+        let jboxQty   = Double(max(1, Int(ceil(panelQty / 8))))
+
+        let grandTotal = panelQty  * pricePanel
+                       + 1         * priceInverter
+                       + batQty    * priceBattery
+                       + panelQty  * priceMountRail
+                       + dcCableM  * priceDCCable
+                       + 20        * priceACCable
+                       + fuseQty   * priceFuse
+                       + 1         * priceGrounding
+                       + hookQty   * priceRoofHook
+                       + jboxQty   * priceJunctionBox
+
+        return VStack(alignment: .leading, spacing: 0) {
+            // Başlık
+            HStack {
+                Image(systemName: "list.bullet.clipboard.fill").foregroundColor(sunGold)
+                Text("Malzeme Listesi")
+                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.white)
+                Spacer()
+                Label("KDV Dahil", systemImage: "checkmark.seal.fill")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(sunGold.opacity(0.75))
+            }
+            .padding(.bottom, 12)
+
+            // Kolon başlıkları
+            HStack {
+                Text("MALZEME")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer()
+                Text("BİRİM FİYAT")
+                    .frame(width: 90, alignment: .trailing)
+                Text("TOPLAM")
+                    .frame(width: 80, alignment: .trailing)
+            }
+            .font(.system(size: 9, weight: .bold))
+            .foregroundColor(.gray.opacity(0.5))
+            .padding(.bottom, 6)
+
+            Divider().background(Color.white.opacity(0.1)).padding(.bottom, 6)
+
+            // Malzeme satırları
+            materialPriceRow(
+                name: "Güneş Paneli (400Wp Monokristalin)",
+                qty: panelQty, unit: "adet", price: $pricePanel
+            )
+            materialPriceRow(
+                name: "İnverter (\(String(format: "%.1f", result.inverterKW)) kW)",
+                qty: 1, unit: "adet", price: $priceInverter
+            )
+            if result.batteryCount > 0 {
+                materialPriceRow(
+                    name: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
+                    qty: batQty, unit: "adet", price: $priceBattery
+                )
+            }
+            materialPriceRow(
+                name: "Montaj Sacı + Alüminyum Ray",
+                qty: panelQty, unit: "set", price: $priceMountRail
+            )
+            materialPriceRow(
+                name: "DC Solar Kablo (PV1-F 4mm²)",
+                qty: dcCableM, unit: "m", price: $priceDCCable
+            )
+            materialPriceRow(
+                name: "AC Kablo (NYY 3×4mm²)",
+                qty: 20, unit: "m", price: $priceACCable
+            )
+            materialPriceRow(
+                name: "DC String Sigorta + Tutucu",
+                qty: fuseQty, unit: "adet", price: $priceFuse
+            )
+            materialPriceRow(
+                name: "Topraklama Seti",
+                qty: 1, unit: "set", price: $priceGrounding
+            )
+            materialPriceRow(
+                name: "Çatı Kancası (Alüminyum)",
+                qty: hookQty, unit: "adet", price: $priceRoofHook
+            )
+            materialPriceRow(
+                name: "Junction Box / DC Combiner",
+                qty: jboxQty, unit: "adet", price: $priceJunctionBox
+            )
+
+            Divider().background(sunGold.opacity(0.35)).padding(.vertical, 8)
+
+            // Genel toplam
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("GENEL TOPLAM")
+                        .font(.system(size: 12, weight: .black, design: .rounded)).foregroundColor(.white)
+                    Text("Malzeme • KDV dahil • İşçilik hariç")
+                        .font(.system(size: 10)).foregroundColor(.gray.opacity(0.5))
+                }
+                Spacer()
+                Text(formatTL(grandTotal))
+                    .font(.system(size: 18, weight: .black, design: .rounded)).foregroundColor(sunGold)
+                    .shadow(color: sunGold.opacity(0.5), radius: 6)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(sunGold.opacity(0.10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(sunGold.opacity(0.3), lineWidth: 1))
+            )
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(sunGold.opacity(0.2), lineWidth: 1))
+    }
+
+    private func materialPriceRow(name: String, qty: Double, unit: String, price: Binding<Double>) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.88))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(Int(qty)) \(unit)")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundColor(.gray.opacity(0.55))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Düzenlenebilir birim fiyat
+                VStack(alignment: .trailing, spacing: 2) {
+                    TextField("0", value: price, format: .number)
+                        .keyboardType(.decimalPad)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(sunGold)
+                        .multilineTextAlignment(.trailing)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(6)
+                        .frame(width: 80)
+                    Text("₺ / \(unit)")
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundColor(.gray.opacity(0.4))
+                }
+                .frame(width: 90, alignment: .trailing)
+
+                // Satır toplamı
+                Text(formatTL(qty * price.wrappedValue))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 80, alignment: .trailing)
+            }
+            Divider().background(Color.white.opacity(0.06)).padding(.top, 8)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Yardımcı Bileşenler

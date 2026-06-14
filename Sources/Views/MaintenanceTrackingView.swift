@@ -7,6 +7,7 @@
 import SwiftUI
 import Charts
 import UserNotifications
+import UIKit
 
 // MARK: - MaintenanceTrackingView
 
@@ -231,8 +232,9 @@ struct MaintenanceRecordDetailView: View {
     let record: MaintenanceRecord
 
     @State private var localRecord: MaintenanceRecord
-    @State private var showAddReading = false
-    @State private var showEditRecord = false
+    @State private var showAddReading  = false
+    @State private var showEditRecord  = false
+    @State private var showAddVisit    = false
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -249,11 +251,16 @@ struct MaintenanceRecordDetailView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
+                facilityRiskCard
                 recordInfoCard
                 if let latest = sortedReadings.first { currentStatusCard(latest) }
                 if localRecord.readings.count >= 2 { trendChartCard }
+                if localRecord.readings.count >= 4 { cosPhiTrendInsightCard }
                 if !localRecord.readings.isEmpty { annualSummaryCard }
+                capacitorHealthCard
+                recommendationsCard
                 readingListCard
+                visitHistoryCard
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
@@ -265,8 +272,16 @@ struct MaintenanceRecordDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button("Okuma Ekle") { showAddReading = true }
-                    Button("Kaydı Düzenle") { showEditRecord = true }
+                    Button { showAddReading = true } label: { Label("Okuma Ekle", systemImage: "gauge.medium") }
+                    Button { showAddVisit = true } label: { Label("Ziyaret Ekle", systemImage: "checklist") }
+                    Divider()
+                    Button { showEditRecord = true } label: { Label("Kaydı Düzenle", systemImage: "pencil") }
+                    Button {
+                        let data = PDFService.generateMaintenancePDF(record: localRecord, settings: persistence.settings)
+                        let name = "bakim_\(localRecord.customerName.isEmpty ? "rapor" : localRecord.customerName)"
+                        ShareService.sharePDF(data: data, filename: name)
+                    } label: { Label("PDF Raporu", systemImage: "doc.text.fill") }
+                    Divider()
                     Button("Kaydı Sil", role: .destructive) {
                         persistence.deleteMaintenanceRecord(id: localRecord.id)
                     }
@@ -285,6 +300,12 @@ struct MaintenanceRecordDetailView: View {
             MaintenanceRecordFormView(record: localRecord) { updated in
                 localRecord = updated
                 persistence.saveMaintenanceRecord(updated)
+            }
+        }
+        .sheet(isPresented: $showAddVisit) {
+            MaintenanceVisitFormView { visit in
+                localRecord.visits.append(visit)
+                persistence.saveMaintenanceRecord(localRecord)
             }
         }
         .onAppear {
@@ -464,6 +485,220 @@ struct MaintenanceRecordDetailView: View {
         }.frame(maxWidth: .infinity)
     }
 
+    // MARK: - Tesis Risk Skoru (Task 5)
+
+    private var riskInfo: (color: Color, label: String, detail: String) {
+        let recent = Array(sortedReadings.prefix(3))
+        let avgCos = recent.isEmpty ? nil : recent.reduce(0.0) { $0 + $1.cosPhi } / Double(recent.count)
+        let lastVisit = localRecord.visits.sorted { $0.date > $1.date }.first
+        var red = 0; var yellow = 0
+        if let cos = avgCos { if cos < 0.90 { red += 2 } else if cos < 0.95 { yellow += 1 } }
+        if localRecord.isOverdue { red += 1 } else if localRecord.isDueSoon { yellow += 1 }
+        if let v = lastVisit { red += v.failureCount; yellow += v.warningCount / 2 }
+        if red >= 2 { return (.red, "Yüksek Risk", "Acil müdahale gerektirir") }
+        if red >= 1 || yellow >= 2 { return (.orange, "Orta Risk", "Yakın zamanda incelenmeli") }
+        return (.green, "Düşük Risk", "Normal çalışma durumu")
+    }
+
+    private var facilityRiskCard: some View {
+        let (rc, rl, rd) = riskInfo
+        return HStack(spacing: 16) {
+            ZStack {
+                Circle().fill(rc.opacity(0.15)).frame(width: 56, height: 56)
+                Circle().fill(rc.opacity(0.25)).frame(width: 40, height: 40)
+                Image(systemName: rc == .green ? "checkmark.circle.fill" : rc == .orange ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 24)).foregroundStyle(rc)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Tesis Risk Skoru").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
+                Text(rl).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(rc)
+                Text(rd).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(rc.opacity(0.07))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(rc.opacity(0.4), lineWidth: 1)))
+    }
+
+    // MARK: cos φ Trend Analizi (Task 5)
+
+    private var cosPhiTrendInsightCard: some View {
+        let sorted = localRecord.readings.sorted { $0.date < $1.date }
+        let recent = Array(sorted.suffix(3))
+        let older  = Array(sorted.dropLast(3).suffix(3))
+        let recentAvg = recent.isEmpty ? 0.0 : recent.reduce(0.0) { $0 + $1.cosPhi } / Double(recent.count)
+        let olderAvg  = older.isEmpty  ? 0.0 : older.reduce(0.0)  { $0 + $1.cosPhi } / Double(older.count)
+        let delta = recentAvg - olderAvg
+        let (trendIcon, trendLabel, trendColor): (String, String, Color) = delta > 0.01
+            ? ("arrow.up.circle.fill", "İyileşiyor", .green)
+            : delta < -0.01
+            ? ("arrow.down.circle.fill", "Kötüleşiyor", .red)
+            : ("minus.circle.fill", "Stabil", .gray)
+
+        return HStack(spacing: 16) {
+            Image(systemName: trendIcon).font(.system(size: 32)).foregroundStyle(trendColor)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("cos φ Trendi").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
+                Text(trendLabel).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(trendColor)
+                Text(String(format: "Son 3 ort: %.3f → Önceki 3 ort: %.3f", recentAvg, olderAvg))
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+            }
+            Spacer()
+            Text(delta >= 0 ? String(format: "+%.3f", delta) : String(format: "%.3f", delta))
+                .font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(trendColor)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(trendColor.opacity(0.07))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(trendColor.opacity(0.3), lineWidth: 1)))
+    }
+
+    // MARK: Kondansatör Sağlık (Task 5)
+
+    private var capacitorHealthCard: some View {
+        let lastVisit = localRecord.visits.sorted { $0.date > $1.date }.first
+        let capItems = lastVisit?.items.filter { $0.title.contains("Kondansatör") || $0.title.contains("Kapasite") } ?? []
+        let hasFailure = capItems.contains { $0.status == .failure }
+        let hasWarning = capItems.contains { $0.status == .warning }
+        let recentCos = sortedReadings.prefix(3).reduce(0.0) { $0 + $1.cosPhi } / max(1, Double(min(3, sortedReadings.count)))
+
+        let (health, healthColor, healthDetail): (String, Color, String)
+        if lastVisit == nil {
+            (health, healthColor, healthDetail) = ("Bilinmiyor", .gray, "Bakım ziyareti kaydı yok")
+        } else if hasFailure {
+            (health, healthColor, healthDetail) = ("Kritik", .red, "Son ziyarette arıza tespit edildi")
+        } else if hasWarning {
+            (health, healthColor, healthDetail) = ("Dikkat", .orange, "Son ziyarette dikkat gerektiriyor")
+        } else if recentCos < 0.90 && !sortedReadings.isEmpty {
+            (health, healthColor, healthDetail) = ("Şüpheli", .orange, "Düşük cos φ kondansatör sorunu olabilir")
+        } else {
+            (health, healthColor, healthDetail) = ("İyi", .green, "Son bakımda sorun tespit edilmedi")
+        }
+
+        return HStack(spacing: 14) {
+            Image(systemName: "cylinder.split.1x2.fill").font(.system(size: 28)).foregroundStyle(healthColor)
+                .shadow(color: healthColor.opacity(0.4), radius: 6)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Kondansatör Sağlığı").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
+                Text(health).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(healthColor)
+                Text(healthDetail).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(healthColor.opacity(0.07))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(healthColor.opacity(0.3), lineWidth: 1)))
+    }
+
+    // MARK: Sonraki Bakım Önerileri (Task 5)
+
+    private var recommendationsCard: some View {
+        var recs: [String] = []
+        if let latest = sortedReadings.first {
+            if latest.cosPhi < 0.95 { recs.append("cos φ ölçümü ve kompanzasyon ayarı") }
+            if latest.isOvercompensated { recs.append("Aşırı kompanzasyon incelemesi") }
+        }
+        if let lastVisit = localRecord.visits.sorted(by: { $0.date > $1.date }).first {
+            if lastVisit.failureCount > 0 { recs.append("Önceki arızaların takibi (\(lastVisit.failureCount) arıza)") }
+            let unc = lastVisit.items.filter { $0.status == .unchecked }
+            if !unc.isEmpty { recs.append("Tamamlanmamış kontroller: \(unc.count) madde") }
+        }
+        if localRecord.visits.isEmpty { recs.append("İlk bakım ziyareti ve tam check list") }
+        if localRecord.isOverdue { recs.append("Gecikmiş periyodik kontrol — ivediyle yapılmalı") }
+        if recs.isEmpty { recs.append("Rutin periyodik kontrol") }
+
+        return VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "lightbulb.fill").foregroundStyle(amber)
+                Text("Sonraki Ziyarette Kontrol Et")
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+            }
+            ForEach(recs, id: \.self) { rec in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.right.circle.fill").font(.system(size: 13)).foregroundStyle(amber)
+                    Text(rec).font(.system(size: 13, design: .rounded)).foregroundStyle(.white.opacity(0.85))
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(amber.opacity(0.06))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.25), lineWidth: 1)))
+    }
+
+    // MARK: - Ziyaret Geçmişi (Task 3)
+
+    private var visitHistoryCard: some View {
+        let sorted = localRecord.visits.sorted { $0.date > $1.date }
+        return VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "checklist").foregroundStyle(Color.teal)
+                Text("Bakım Ziyareti Geçmişi")
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Button { showAddVisit = true } label: {
+                    Label("Ekle", systemImage: "plus.circle.fill")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.teal)
+                }
+                .buttonStyle(.plain)
+            }
+            if sorted.isEmpty {
+                Text("Henüz bakım ziyareti kaydı yok. Sağ üstten ziyaret ekleyin.")
+                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
+                    .padding(.vertical, 12).frame(maxWidth: .infinity)
+            } else {
+                ForEach(sorted) { visit in
+                    NavigationLink(destination: MaintenanceVisitDetailView(visit: visit)) {
+                        visitRow(visit)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 0.10, green: 0.10, blue: 0.13))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.teal.opacity(0.3), lineWidth: 1)))
+    }
+
+    private func visitRow(_ visit: MaintenanceVisit) -> some View {
+        let hasFailure = visit.failureCount > 0
+        let hasWarning = visit.warningCount > 0
+        let sc: Color = hasFailure ? .red : hasWarning ? .orange : .green
+        return HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(sc.opacity(0.13)).frame(width: 40, height: 40)
+                Image(systemName: hasFailure ? "xmark.circle.fill" : hasWarning ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 18)).foregroundStyle(sc)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(visit.date.formatted(.dateTime.day().month().year()))
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                if !visit.technician.isEmpty {
+                    Text(visit.technician).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 3) {
+                HStack(spacing: 6) {
+                    if visit.failureCount > 0 {
+                        Label("\(visit.failureCount)", systemImage: "xmark.circle.fill")
+                            .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                    }
+                    if visit.warningCount > 0 {
+                        Label("\(visit.warningCount)", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.orange)
+                    }
+                }
+                Text("\(visit.completedCount)/\(visit.items.count) kontrol")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(sc.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(sc.opacity(0.2), lineWidth: 1))
+    }
+
     // MARK: Reading List
 
     private var readingListCard: some View {
@@ -518,6 +753,203 @@ struct MaintenanceRecordDetailView: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+    }
+}
+
+// MARK: - Ziyaret Formu (Task 3)
+
+struct MaintenanceVisitFormView: View {
+    @Environment(\.dismiss) private var dismiss
+    let onSave: (MaintenanceVisit) -> Void
+
+    @State private var visit: MaintenanceVisit = .standard()
+    @State private var technicianText: String = ""
+    @State private var overallNotes: String = ""
+    @State private var expandedItem: UUID? = nil
+
+    private let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.07, green: 0.07, blue: 0.09).ignoresSafeArea()
+                ScrollView {
+                    VStack(spacing: 14) {
+                        Group {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Ziyaret Tarihi").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                                DatePicker("", selection: $visit.date, displayedComponents: .date)
+                                    .datePickerStyle(.compact).labelsHidden()
+                                    .colorScheme(.dark)
+                            }
+                            .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Teknisyen").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                                TextField("Adı Soyadı", text: $technicianText)
+                                    .font(.system(size: 15, design: .rounded)).foregroundColor(.white)
+                            }
+                            .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Kontrol Listesi")
+                                .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.gray)
+                            ForEach($visit.items) { $item in
+                                visitItemRow(item: $item)
+                            }
+                        }
+                        .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Genel Notlar").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                            TextEditor(text: $overallNotes)
+                                .font(.system(size: 14, design: .rounded)).foregroundColor(.white)
+                                .frame(height: 80).scrollContentBackground(.hidden)
+                                .background(Color.clear)
+                        }
+                        .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+
+                        Button {
+                            visit.technician = technicianText
+                            visit.overallNotes = overallNotes
+                            onSave(visit)
+                            dismiss()
+                        } label: {
+                            Text("Kaydet")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 15)
+                                .background(Capsule().fill(amber))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Bakım Ziyareti Ekle")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { dismiss() }.foregroundStyle(.gray)
+                }
+            }
+        }
+    }
+
+    private func visitItemRow(item: Binding<ChecklistItem>) -> some View {
+        let statuses: [ChecklistItemStatus] = [.ok, .warning, .failure]
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(item.wrappedValue.title)
+                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 4) {
+                    ForEach(statuses, id: \.self) { st in
+                        Button {
+                            if item.wrappedValue.status == st { item.status.wrappedValue = .unchecked }
+                            else { item.status.wrappedValue = st }
+                        } label: {
+                            Text(st.shortEmoji).font(.system(size: 20))
+                                .opacity(item.wrappedValue.status == st ? 1.0 : 0.28)
+                                .scaleEffect(item.wrappedValue.status == st ? 1.15 : 1.0)
+                                .animation(.spring(response: 0.2), value: item.wrappedValue.status)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            if item.wrappedValue.status != .unchecked {
+                TextField("Not (isteğe bağlı)", text: item.notes)
+                    .font(.system(size: 12, design: .rounded)).foregroundColor(.white.opacity(0.8))
+                    .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Ziyaret Detay (Task 3)
+
+struct MaintenanceVisitDetailView: View {
+    let visit: MaintenanceVisit
+    private let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.07, green: 0.07, blue: 0.09).ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 14) {
+                    summaryBanner
+                    itemsList
+                    if !visit.overallNotes.isEmpty {
+                        notesCard
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .navigationTitle(visit.date.formatted(.dateTime.day().month().year()))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var summaryBanner: some View {
+        HStack(spacing: 20) {
+            stat("\(visit.okCount)", label: "Tamam", color: .green)
+            Divider().background(.white.opacity(0.1)).frame(height: 36)
+            stat("\(visit.warningCount)", label: "Dikkat", color: .orange)
+            Divider().background(.white.opacity(0.1)).frame(height: 36)
+            stat("\(visit.failureCount)", label: "Arıza", color: .red)
+            Divider().background(.white.opacity(0.1)).frame(height: 36)
+            stat("\(visit.items.filter { $0.status == .unchecked }.count)", label: "Bekliyor", color: .gray)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06)))
+    }
+
+    private func stat(_ value: String, label: String, color: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.system(size: 20, weight: .black, design: .rounded)).foregroundStyle(color)
+            Text(label).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private var itemsList: some View {
+        VStack(spacing: 2) {
+            ForEach(visit.items) { item in
+                HStack(spacing: 12) {
+                    Text(item.status.shortEmoji).font(.system(size: 20))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title).font(.system(size: 13, design: .rounded)).foregroundStyle(.white)
+                        if !item.notes.isEmpty {
+                            Text(item.notes).font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 10).padding(.horizontal, 14)
+                .background(itemBg(item.status))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func itemBg(_ st: ChecklistItemStatus) -> Color {
+        switch st {
+        case .ok: return .green.opacity(0.07)
+        case .warning: return .orange.opacity(0.07)
+        case .failure: return .red.opacity(0.09)
+        case .unchecked: return .white.opacity(0.04)
+        }
+    }
+
+    private var notesCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Genel Notlar").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            Text(visit.overallNotes).font(.system(size: 13, design: .rounded)).foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
     }
 }
 

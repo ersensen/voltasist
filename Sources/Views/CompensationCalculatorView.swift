@@ -81,6 +81,9 @@ struct CompensationCalculatorView: View {
     // MARK: State — THD Giriş
     @State private var thdText: String           = "10.0"
 
+    // MARK: State — Kademe Gruplama
+    @State private var stepCountStr: String      = "12"
+
     // MARK: Tasarım
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -451,51 +454,154 @@ struct CompensationCalculatorView: View {
         }
     }
 
-    // Hesaplanan toplam kVAr'a göre kondansatör adedi ve boyutu
+    // Kondansatör gruplama — kullanıcı kademe sayısı girer
     private var capacitorGroupingCard: some View {
-        let steps: [Double] = [12.5, 25, 50, 75, 100]
-        let selected = nearestSteps(total: requiredQcKVAr, options: steps)
-        var countByStep: [Double: Int] = [:]
-        for s in selected { countByStep[s, default: 0] += 1 }
-        let grouped = countByStep.sorted { $0.key > $1.key }
-        let totalInstalled = grouped.reduce(0.0) { $0 + $1.key * Double($1.value) }
+        let stepCount = max(1, Int(stepCountStr) ?? 12)
+        let kvarPerStep = requiredQcKVAr / Double(stepCount)
 
-        return VStack(spacing: 12) {
+        // En yakın standart kondansatör değeri
+        let standardOptions: [Double] = [5, 10, 12.5, 25, 50, 75, 100]
+        let suggestedStep = standardOptions.min(by: { abs($0 - kvarPerStep) < abs($1 - kvarPerStep) }) ?? 25
+        let equalTotal = suggestedStep * Double(stepCount)
+        let equalExcess = equalTotal - requiredQcKVAr
+
+        // Karma gruplama (nearestSteps)
+        let mixedSteps = nearestSteps(total: requiredQcKVAr, options: [12.5, 25, 50])
+        var mixedCount: [Double: Int] = [:]
+        for s in mixedSteps { mixedCount[s, default: 0] += 1 }
+        let mixedGrouped = mixedCount.sorted { $0.key > $1.key }
+        let mixedTotal = mixedGrouped.reduce(0.0) { $0 + $1.key * Double($1.value) }
+        let mixedStepCount = mixedGrouped.reduce(0) { $0 + $1.value }
+
+        return VStack(spacing: 14) {
             HStack {
                 Image(systemName: "square.grid.2x2.fill").foregroundStyle(Color.purple)
                 Text("Kondansatör Gruplama")
                     .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
-                Text(String(format: "%.1f kVAr kurulu", totalInstalled))
-                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
             }
 
-            if grouped.isEmpty {
+            if requiredQcKVAr < 1 {
                 Text("Kompanzasyon gerekmez — cos φ yeterli")
                     .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
             } else {
-                ForEach(grouped, id: \.key) { pair in
-                    HStack(spacing: 12) {
-                        Text("\(pair.value) adet")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(Capsule().fill(Color.purple))
-                        Text("×")
-                            .font(.system(size: 14, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
-                        Text(String(format: "%.0f kVAr", pair.key))
-                            .font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                // Kademe sayısı girişi
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Kademe Sayısı").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.gray)
+                    HStack(spacing: 10) {
+                        Button {
+                            let v = max(1, (Int(stepCountStr) ?? 12) - 1)
+                            stepCountStr = "\(v)"
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 26)).foregroundStyle(Color.purple.opacity(0.85))
+                        }
+                        .buttonStyle(.plain)
+
+                        TextField("12", text: $stepCountStr)
+                            .keyboardType(.numberPad)
+                            .font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 52)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.07))
+                            .cornerRadius(8)
+
+                        Button {
+                            let v = (Int(stepCountStr) ?? 12) + 1
+                            stepCountStr = "\(v)"
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 26)).foregroundStyle(Color.purple.opacity(0.85))
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("kademe")
+                            .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
                         Spacer()
-                        Text(String(format: "= %.0f kVAr", pair.key * Double(pair.value)))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.purple.opacity(0.85))
+                        Text(String(format: "%.1f kVAr/kademe", kvarPerStep))
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
                     }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.purple.opacity(0.08))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.2), lineWidth: 1))
-                    )
+                }
+                .padding(12)
+                .background(Color.purple.opacity(0.06))
+                .cornerRadius(12)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.2), lineWidth: 1))
+
+                // Eşit kademeli sonuç
+                VStack(spacing: 8) {
+                    Text("EŞİT KADEMELİ GRUPLAMA")
+                        .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(spacing: 6) {
+                        Text("\(stepCount)")
+                            .font(.system(size: 24, weight: .black, design: .rounded)).foregroundStyle(Color.purple)
+                        Text("kademe")
+                            .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
+                        Text("×")
+                            .font(.system(size: 18, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+                        Text(String(format: "%.0f kVAr", suggestedStep))
+                            .font(.system(size: 24, weight: .black, design: .rounded)).foregroundStyle(.white)
+                        Text("=")
+                            .font(.system(size: 18, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+                        Text(String(format: "%.0f kVAr", equalTotal))
+                            .font(.system(size: 24, weight: .black, design: .rounded))
+                            .foregroundStyle(equalExcess < 1 ? .green : .orange)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(14)
+                    .background(Color.purple.opacity(0.08))
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.purple.opacity(0.25), lineWidth: 1))
+
+                    Text(String(format: "Standart kondansatör: %.0f kVAr · İhtiyaç: %.0f kVAr", suggestedStep, requiredQcKVAr))
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if equalExcess > 0.5 {
+                        HStack(spacing: 5) {
+                            Image(systemName: "info.circle").font(.system(size: 11)).foregroundStyle(.orange)
+                            Text(String(format: "+%.0f kVAr fazla kurulacak — ihtiyaçtan büyük standart değer seçildi", equalExcess))
+                                .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange.opacity(0.85))
+                        }
+                    }
+                }
+
+                // Karma gruplama
+                if !mixedGrouped.isEmpty && abs(mixedTotal - equalTotal) > 0.1 {
+                    Divider().background(Color.purple.opacity(0.2))
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("KARMA GRUPLAMA")
+                                .font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray.opacity(0.6))
+                            Spacer()
+                            Text("\(mixedStepCount) kademe · \(String(format: "%.0f kVAr", mixedTotal))")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.green)
+                        }
+                        ForEach(mixedGrouped, id: \.key) { pair in
+                            HStack(spacing: 12) {
+                                Text("\(pair.value) adet")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.purple))
+                                Text("×")
+                                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+                                Text(String(format: "%.0f kVAr", pair.key))
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                                Spacer()
+                                Text(String(format: "= %.0f kVAr", pair.key * Double(pair.value)))
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.purple.opacity(0.85))
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.07))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.2), lineWidth: 1)))
+                        }
+                        Text("Karma gruplama tam ihtiyacı karşılar — sıfır fazlalık")
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.green.opacity(0.8))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
         }

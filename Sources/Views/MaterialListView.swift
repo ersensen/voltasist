@@ -655,6 +655,13 @@ struct MaterialQuantitySheet: View {
     private var isMetraj: Bool { material.unit == "m" }
     private var quantityLabel: String { isMetraj ? "Metraj (m)" : "Adet" }
     private var qty: Double { Double(quantity.replacingOccurrences(of: ",", with: ".")) ?? 0 }
+    private var step: Double { isMetraj ? 0.5 : 1.0 }
+
+    private func adjustQty(_ delta: Double) {
+        let current = Double(quantity.replacingOccurrences(of: ",", with: ".")) ?? 0
+        let new = max(0, current + delta)
+        quantity = new.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(new))" : String(format: "%.1f", new)
+    }
 
     var body: some View {
         NavigationStack {
@@ -689,20 +696,40 @@ struct MaterialQuantitySheet: View {
                         Text(quantityLabel)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundColor(.gray)
-                        HStack(spacing: 12) {
+                        HStack(spacing: 14) {
+                            Button { adjustQty(-step) } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.system(size: 36))
+                                    .foregroundColor(qty > step ? amber : Color.gray.opacity(0.3))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(qty <= 0)
+
                             TextField("1", text: $quantity)
                                 .keyboardType(.decimalPad)
                                 .font(.system(size: 26, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.center)
+                                .frame(minWidth: 60)
+
                             Text(material.unit)
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .foregroundColor(.gray)
+
+                            Button { adjustQty(step) } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 36))
+                                    .foregroundColor(amber)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .padding(16)
+                        .padding(14)
                         .background(Color.white.opacity(0.07))
                         .cornerRadius(14)
                         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        Text(isMetraj ? "0.5 m artış/azalış" : "1 adet artış/azalış")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(.gray.opacity(0.5))
                     }
                     .padding(.horizontal, 24)
 

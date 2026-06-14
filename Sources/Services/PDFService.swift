@@ -693,6 +693,162 @@ struct PDFService {
         return y
     }
 
+    // MARK: - Bakım Takip Raporu PDF
+
+    static func generateMaintenancePDF(record: MaintenanceRecord, settings: AppSettings) -> Data {
+        let pageRect = CGRect(x: 0, y: 0, width: Layout.pageWidth, height: Layout.pageHeight)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "tr_TR"); df.dateFormat = "dd.MM.yyyy"
+
+        return renderer.pdfData { ctx in
+            ctx.beginPage()
+            var y: CGFloat = 0
+
+            // Header band
+            ctx.cgContext.setFillColor(Palette.dark.cgColor)
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: pageRect.width, height: Layout.headerHeight))
+            ctx.cgContext.setFillColor(Palette.amber.cgColor)
+            ctx.cgContext.fill(CGRect(x: 0, y: 0, width: 90, height: Layout.headerHeight))
+            NSAttributedString(string: "⚡", attributes: [.font: font(size: 38, weight: .bold), .foregroundColor: Palette.dark])
+                .draw(at: CGPoint(x: 22, y: (Layout.headerHeight - 46) / 2))
+            NSAttributedString(string: settings.companyName, attributes: [.font: font(size: 17, weight: .bold), .foregroundColor: UIColor.white])
+                .draw(at: CGPoint(x: 104, y: 18))
+            NSAttributedString(string: "Kompanzasyon Panosu Bakım Takip Raporu",
+                               attributes: [.font: font(size: 11, weight: .semibold), .foregroundColor: Palette.amber])
+                .draw(at: CGPoint(x: 104, y: 40))
+            NSAttributedString(string: "Rapor Tarihi: \(df.string(from: Date()))",
+                               attributes: [.font: font(size: 9), .foregroundColor: UIColor(white: 0.75, alpha: 1)])
+                .draw(at: CGPoint(x: pageRect.width - Layout.marginH - 160, y: 40))
+            y = Layout.headerHeight + 14
+
+            // Tesis Bilgileri
+            y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Tesis Bilgileri", startY: y, rows: [
+                ("Müşteri / Tesis", record.customerName.isEmpty ? "—" : record.customerName),
+                ("Adres",          record.locationAddress.isEmpty ? "—" : record.locationAddress),
+                ("Panel Marka/Model", "\(record.panelBrand) \(record.panelModel)".trimmingCharacters(in: .whitespaces).isEmpty ? "—" : "\(record.panelBrand) \(record.panelModel)"),
+                ("Kurulum Tarihi", df.string(from: record.installationDate)),
+                ("Toplam Kapasite", String(format: "%.0f kVAr", record.totalKVAr)),
+                ("Kontrol Periyodu", "\(record.checkPeriodMonths) ayda bir"),
+            ])
+            y += 10
+
+            // Sayaç Okuma Özeti
+            let sortedReadings = record.readings.sorted { $0.date > $1.date }
+            if !sortedReadings.isEmpty {
+                let avgCos = sortedReadings.prefix(12).reduce(0.0) { $0 + $1.cosPhi } / Double(min(12, sortedReadings.count))
+                let totalPenalty = sortedReadings.prefix(12).reduce(0.0) { $0 + $1.estimatedPenalty }
+
+                y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Okuma Özeti (Son 12 Ay)", startY: y, rows: [
+                    ("Toplam Okuma Sayısı", "\(sortedReadings.count) adet"),
+                    ("Ortalama cos φ", String(format: "%.3f", avgCos) + (avgCos >= 0.95 ? " ✓" : " !")),
+                    ("Tahmini Toplam Ceza", formatCurrency(totalPenalty)),
+                ])
+                y += 10
+
+                // Readings table header
+                if y + 200 > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                ctx.cgContext.setFillColor(Palette.tableHead.cgColor)
+                ctx.cgContext.fill(CGRect(x: Layout.marginH, y: y, width: pageRect.width - 2*Layout.marginH, height: Layout.rowHeight))
+                let colHead: [NSAttributedString.Key: Any] = [.font: font(size: 8, weight: .semibold), .foregroundColor: UIColor.white]
+                NSAttributedString(string: "TARİH", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 4, y: y + 6))
+                NSAttributedString(string: "DÖNEM", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 80, y: y + 6))
+                NSAttributedString(string: "kWh", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 200, y: y + 6))
+                NSAttributedString(string: "kVArh", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 260, y: y + 6))
+                NSAttributedString(string: "cos φ", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 330, y: y + 6))
+                NSAttributedString(string: "DURUM", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 400, y: y + 6))
+                NSAttributedString(string: "CEZA (₺)", attributes: colHead).draw(at: CGPoint(x: Layout.marginH + 460, y: y + 6))
+                y += Layout.rowHeight
+
+                for (idx, r) in sortedReadings.enumerated() {
+                    if y + Layout.rowHeight > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                    if idx % 2 == 1 {
+                        ctx.cgContext.setFillColor(Palette.tableAlt.cgColor)
+                        ctx.cgContext.fill(CGRect(x: Layout.marginH, y: y, width: pageRect.width - 2*Layout.marginH, height: Layout.rowHeight))
+                    }
+                    let rowAttrs: [NSAttributedString.Key: Any] = [.font: font(size: 8), .foregroundColor: Palette.dark]
+                    NSAttributedString(string: df.string(from: r.date), attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 4, y: y + 6))
+                    NSAttributedString(string: r.periodLabel, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 80, y: y + 6))
+                    NSAttributedString(string: String(format: "%.0f", r.activeKWh), attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 200, y: y + 6))
+                    NSAttributedString(string: String(format: "%.0f", r.inductiveKVArh), attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 260, y: y + 6))
+                    let cosStr = String(format: "%.3f", r.cosPhi)
+                    NSAttributedString(string: cosStr, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 330, y: y + 6))
+                    let statusStr = r.cosPhi >= 0.95 ? "Cezasız" : r.cosPhi >= 0.90 ? "Risk" : "Cezalı"
+                    NSAttributedString(string: statusStr, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 400, y: y + 6))
+                    let penaltyStr = r.estimatedPenalty > 0 ? formatCurrency(r.estimatedPenalty) : "—"
+                    NSAttributedString(string: penaltyStr, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 460, y: y + 6))
+                    y += Layout.rowHeight
+                }
+                y += 14
+            }
+
+            // Bakım Ziyareti Geçmişi
+            let sortedVisits = record.visits.sorted { $0.date > $1.date }
+            if !sortedVisits.isEmpty {
+                if y + 120 > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                ctx.cgContext.setFillColor(Palette.tableHead.cgColor)
+                ctx.cgContext.fill(CGRect(x: Layout.marginH, y: y, width: pageRect.width - 2*Layout.marginH, height: 22))
+                NSAttributedString(string: "Bakım Ziyareti Geçmişi (\(sortedVisits.count) ziyaret)",
+                                   attributes: [.font: font(size: 10, weight: .bold), .foregroundColor: Palette.amber])
+                    .draw(at: CGPoint(x: Layout.marginH + 8, y: y + 6))
+                y += 22
+
+                for visit in sortedVisits {
+                    if y + 180 > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+
+                    // Visit header
+                    let techStr = visit.technician.isEmpty ? "" : " | Teknisyen: \(visit.technician)"
+                    NSAttributedString(string: "Ziyaret: \(df.string(from: visit.date))\(techStr) — \(visit.completedCount)/\(visit.items.count) kontrol",
+                                       attributes: [.font: font(size: 9, weight: .semibold), .foregroundColor: Palette.dark])
+                        .draw(at: CGPoint(x: Layout.marginH + 4, y: y + 4))
+                    y += 18
+
+                    // Items
+                    for (idx, item) in visit.items.enumerated() {
+                        if y + 14 > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                        if idx % 2 == 1 {
+                            ctx.cgContext.setFillColor(Palette.tableAlt.cgColor)
+                            ctx.cgContext.fill(CGRect(x: Layout.marginH + 12, y: y, width: pageRect.width - 2*Layout.marginH - 12, height: 14))
+                        }
+                        let statusEmoji = item.status.shortEmoji
+                        let noteStr = item.notes.isEmpty ? "" : " — \(item.notes)"
+                        NSAttributedString(string: "\(statusEmoji) \(item.title)\(noteStr)",
+                                           attributes: [.font: font(size: 7.5), .foregroundColor: Palette.dark])
+                            .draw(in: CGRect(x: Layout.marginH + 16, y: y + 2, width: pageRect.width - 2*Layout.marginH - 20, height: 13))
+                        y += 14
+                    }
+                    if !visit.overallNotes.isEmpty {
+                        NSAttributedString(string: "Not: \(visit.overallNotes)",
+                                           attributes: [.font: font(size: 7.5), .foregroundColor: UIColor.darkGray])
+                            .draw(in: CGRect(x: Layout.marginH + 16, y: y, width: pageRect.width - 2*Layout.marginH - 20, height: 12))
+                        y += 12
+                    }
+                    y += 8
+                }
+                y += 10
+            }
+
+            // Arıza Kayıtları
+            let allFailures = record.visits.flatMap { v in
+                v.failureItems.map { (date: v.date, item: $0) }
+            }.sorted { $0.date > $1.date }
+
+            if !allFailures.isEmpty {
+                if y + 80 > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Arıza Kayıtları (\(allFailures.count) arıza)", startY: y, rows:
+                    allFailures.map { (df.string(from: $0.date), $0.item.title + ($0.item.notes.isEmpty ? "" : " — \($0.item.notes)")) }
+                )
+                y += 10
+            }
+
+            // Footer
+            let footerAttrs: [NSAttributedString.Key: Any] = [.font: font(size: 7), .foregroundColor: UIColor.lightGray]
+            NSAttributedString(string: "VoltAsist — Elektrik Mühendisliği Saha Asistanı  |  Bu rapor otomatik oluşturulmuştur.",
+                               attributes: footerAttrs)
+                .draw(at: CGPoint(x: Layout.marginH, y: pageRect.height - 18))
+        }
+    }
+
     // MARK: - Geçici Dosyaya Kaydet
 
     /// PDF Data'yı cihazın geçici dizinine yazar ve dosya URL'sini döndürür.

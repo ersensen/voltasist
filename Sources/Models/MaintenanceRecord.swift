@@ -17,6 +17,7 @@ struct MaintenanceRecord: Identifiable, Codable {
     var totalKVAr: Double    = 100.0
     var checkPeriodMonths: Int = 3
     var readings: [MaintenanceReading] = []
+    var visits: [MaintenanceVisit] = []
 
     var nextCheckDate: Date {
         let base: Date

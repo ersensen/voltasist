@@ -453,7 +453,7 @@ struct CompensationCalculatorView: View {
 
     // Hesaplanan toplam kVAr'a göre kondansatör adedi ve boyutu
     private var capacitorGroupingCard: some View {
-        let steps: [Double] = [5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60]
+        let steps: [Double] = [12.5, 25, 50, 75, 100]
         let selected = nearestSteps(total: requiredQcKVAr, options: steps)
         var countByStep: [Double: Int] = [:]
         for s in selected { countByStep[s, default: 0] += 1 }
@@ -557,7 +557,7 @@ struct CompensationCalculatorView: View {
     }
 
     private var standardStepsCard: some View {
-        let steps: [Double] = [5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60]
+        let steps: [Double] = [12.5, 25, 50, 75, 100]
         let selectedSteps = nearestSteps(total: requiredQcKVAr, options: steps)
 
         return VStack(spacing: 12) {
@@ -743,6 +743,28 @@ struct CompensationCalculatorView: View {
         let riskText = riskLevel == 0 ? "Düşük Risk" : riskLevel == 1 ? "Orta Risk" : "Yüksek Risk"
 
         return VStack(spacing: 16) {
+            // Eğitim kartları
+            VStack(spacing: 10) {
+                harmonicInfoCard(
+                    icon: "waveform.path",
+                    title: "THD Nedir?",
+                    body: "THD (Toplam Harmonik Distorsiyon), şebeke geriliminin veya akımının ne kadar bozulduğunu gösteren bir yüzdedir. Saf sinüs dalgasından sapma ne kadar büyükse THD o kadar yüksektir. Örnek: %5 THD → şebeke hâlâ temiz; %20 THD → ciddi bozulma var.",
+                    color: Color.purple
+                )
+                harmonicInfoCard(
+                    icon: "platter.2.filled.iphone",
+                    title: "Sahada Nasıl Ölçülür?",
+                    body: "Power quality analizörü veya THD ölçümü yapabilen bir multimetre kullanın. Ölçümü tablodaki ÖLÇÜM NOKTASINA — genellikle MCC paneli giriş barası veya şebeke bağlantı noktası — prob uçlarını yerleştirerek yapın. Cihaz THD% değerini doğrudan gösterir.",
+                    color: Color.cyan
+                )
+                harmonicInfoCard(
+                    icon: "exclamationmark.triangle",
+                    title: "Ne Zaman Sorun Olur?",
+                    body: "IEC 61000-3-12 / EN 50160 standardına göre: %5 altı → normal · %5–8 → dikkat et · %8'in üzeri → kompanzasyon kondansatörleri ısınır, trafolar erken yıpranır, sigortalar gereksiz atar. Invertör, kaynak makinesi ve VFD bulunan tesislerde özellikle takip edin.",
+                    color: Color.orange
+                )
+            }
+
             // THD kaydırıcı
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -888,6 +910,26 @@ struct CompensationCalculatorView: View {
                 .fill(color.opacity(0.08))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.3), lineWidth: 1))
         )
+    }
+
+    private func harmonicInfoCard(icon: String, title: String, body: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text(body)
+                    .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(color.opacity(0.07))
+        .cornerRadius(12)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.2), lineWidth: 1))
     }
 
     // MARK: ── SEKME 5: Transformatör ──

@@ -65,6 +65,22 @@ struct SolarCalculatorView: View {
                     if let result = vm.result, vm.showResult {
                         resultTabs(result: result)
                         solarMaterialListSection(result: result)
+
+                        Button(action: {
+                            pendingQuoteItems = QuoteEngine.itemsFromSolar(result, input: vm.input)
+                            showCustomerPicker = true
+                        }) {
+                            Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    LinearGradient(colors: [sunGold, sunOrange], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .cornerRadius(14)
+                                .shadow(color: sunGold.opacity(0.35), radius: 6, y: 3)
+                        }
                     }
 
                     Spacer(minLength: 30)
@@ -540,22 +556,6 @@ struct SolarCalculatorView: View {
                     }
                     .frame(height: 100)
                 }
-            }
-
-            // Teklif'e ekle
-            Button(action: {
-                if let res = vm.result {
-                    pendingQuoteItems = QuoteEngine.itemsFromSolar(res, input: vm.input)
-                    showCustomerPicker = true
-                }
-            }) {
-                Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(sunGold)
-                    .cornerRadius(12)
             }
         }
         .padding(16)

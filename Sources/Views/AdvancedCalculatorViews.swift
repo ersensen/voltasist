@@ -187,6 +187,20 @@ struct ShortCircuitCalculatorView: View {
 
     private var infoCards: some View {
         VStack(spacing: 10) {
+            Text("Neden Hesaplanır?")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+            hapBilgi(icon: "square.3.layers.3d.fill", title: "Pano ve Kesici Seçimi", body: "Pano içindeki sigorta ve şalterler, kısa devre anında oluşacak pik akıma (Icc) dayanacak kırma kapasitesine sahip olmalıdır. Hesaplanmamış Icc → yetersiz kesici → yangın riski.", color: color)
+            hapBilgi(icon: "bolt.fill", title: "Sigorta ve Kablo Boyutlandırma", body: "Kablo ve klemens seçiminde Icc değeri referans alınır. Kablo, kısa devre süresinde (genellikle 0.1–1 sn) aşırı ısınmadan bu akıma dayanabilmelidir.", color: .orange)
+            hapBilgi(icon: "person.fill.checkmark", title: "Kişi Güvenliği", body: "Kısa devre anındaki ark enerjisi (arcing fault) çalışan güvenliği için kritiktir. Icc bilinmeden kişisel koruyucu ekipman (KKE) seçimi ve çalışma mesafesi belirlenemez.", color: .yellow)
+            Divider().background(Color.white.opacity(0.08))
+            Text("Teknik Referans")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
             hapBilgi(icon: "bolt.shield.fill", title: "Formül: Icc = Scc / (√3 × Un)", body: "Scc = S_trafo / (%Uk/100). Kısa devre görünen gücü trafo kapasitesini kısa devre empedansına böler.", color: color)
             hapBilgi(icon: "chart.bar.fill", title: "Tipik %Uk Değerleri", body: "100–630 kVA trafo: %4–6 · 1 MVA ve üzeri: %5–8 · Katalog değerini kullanın.", color: .orange)
             hapBilgi(icon: "checkmark.shield.fill", title: "TS EN 60909 Standardı", body: "Kısa devre akımı hesabında uluslararası referans standarttır. Kesici kırma kapasitesi bu değer üzerinde olmalıdır.", color: .green)
@@ -487,8 +501,29 @@ struct EarthingCalculatorView: View {
 
     private var infoCards: some View {
         VStack(spacing: 10) {
-            hapBilgi(icon: "arrow.down.to.line.compact", title: "RA × Ia ≤ UL Koşulu", body: "RA: toprak elektrot direnci (Ω) · Ia: koruma akımı eşiği (A) · UL: izin verilen temas gerilimi (50 V kuru / 25 V ıslak ortam)", color: color)
-            hapBilgi(icon: "bolt.shield", title: "Sistem Tipleri", body: "TN-C-S: PEN iletkeni · TT: bağımsız topraklama, RCD gerekli · IT: yalıtılmış, 2. arıza tehlikelidir", color: .blue)
+            Text("Neden Hesaplanır?")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+            hapBilgi(icon: "person.fill.xmark", title: "Dokunma Gerilimi Tehlikesi", body: "Elektrik çarpması riskini belirleyen şey gerilimin kendisi değil, vücuttan geçen akımdır. Topraklama direnci ne kadar düşükse arıza akımı o kadar hızlı iletilir ve insan vücuduna düşen gerilim (dokunma gerilimi) o kadar düşük kalır.", color: color)
+            hapBilgi(icon: "checkmark.circle", title: "Topraklama Sistemini Ne Zaman Kontrol Et?", body: "Yeni tesis devreye almadan önce · Enerji sayacı veya ana tabloda değişiklik sonrası · Her yıl rutin bakımda · Uzun süreli yağış sonrası (toprak direnci nem ile değişir).", color: .teal)
+            Divider().background(Color.white.opacity(0.08))
+            Text("Değerler Ne Anlama Gelir?")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+            hapBilgi(icon: "arrow.down.to.line.compact", title: "RA — Toprak Elektrot Direnci (Ω)", body: "Toprak çubuğu veya plakasının zemine olan direncidir. Nemli killi toprakta 5–20 Ω, kuru kumlu toprakta 100 Ω'u aşabilir. Hedef: TT sistemde ≤ UL/Ia Ω.", color: color)
+            hapBilgi(icon: "bolt.circle", title: "Ia — Koruma Akımı (A)", body: "Sigortanın veya RCD'nin (kaçak akım rölesi) devreyi açmak için gereken minimum akımdır. RCD için genellikle 30 mA veya 300 mA; termik-manyetik sigorta için katalog değeri.", color: .orange)
+            hapBilgi(icon: "exclamationmark.shield", title: "UL — İzin Verilen Dokunma Gerilimi", body: "50 V kuru ortam (ev, ofis, endüstri) · 25 V ıslak/ıslak ortam (banyo, inşaat sahası, dışarısı). Bu eşikler IEC 60364 / TS HD 60364 ile belirlenmiştir.", color: .yellow)
+            Divider().background(Color.white.opacity(0.08))
+            Text("Sistem Farkları")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+            hapBilgi(icon: "bolt.shield", title: "TN / TT / IT Sistemler", body: "TN (TN-S / TN-C-S): nötr ve koruma iletkeni trafodan çekilidir; Icc yüksektir, sigorta hızlı atar. · TT: her tesis kendi toprak elektrotunu kullanır; RCD zorunludur. · IT: yalıtılmış nötr, ilk arızada alarm verir; ikinci arıza tehlikelidir.", color: .blue)
             hapBilgi(icon: "doc.badge.checkmark", title: "IEC 60364 / TS HD 60364", body: "Alçak gerilim elektrik tesisleri için güvenlik gereksinimleri. Koruma iletkenlerinin seçimi ve boyutlandırması.", color: .teal)
         }
     }

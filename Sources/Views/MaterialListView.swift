@@ -19,6 +19,9 @@ struct MaterialListView: View {
     @State private var showCustomerPicker   = false
     @State private var showActiveQuotePicker = false
     @State private var showAddedConfirm     = false
+    @State private var pendingQuantity: String = "1"
+    @State private var showQuantitySheet    = false
+    @State private var needsCustomerPicker  = false
 
     private let amber  = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bg     = Color(red: 0.06, green: 0.06, blue: 0.09)
@@ -124,10 +127,37 @@ struct MaterialListView: View {
         .sheet(item: $editingMaterial) { mat in
             MaterialFormSheet(material: mat, onSave: { persistence.saveMaterial($0) })
         }
+        .sheet(isPresented: $showQuantitySheet) {
+            if let mat = pendingMaterial {
+                MaterialQuantitySheet(material: mat, quantity: $pendingQuantity) { confirmedQty in
+                    guard let qty = confirmedQty else {
+                        pendingMaterial = nil
+                        showQuantitySheet = false
+                        return
+                    }
+                    if persistence.activeQuoteId != nil {
+                        persistence.addItemToActiveQuote(makeQuoteItem(from: mat, quantity: qty))
+                        pendingMaterial = nil
+                        showQuantitySheet = false
+                        showAddedConfirm = true
+                    } else {
+                        needsCustomerPicker = true
+                        showQuantitySheet = false
+                    }
+                }
+            }
+        }
+        .onChange(of: showQuantitySheet) { _, newVal in
+            if !newVal && needsCustomerPicker {
+                needsCustomerPicker = false
+                showCustomerPicker = true
+            }
+        }
         .sheet(isPresented: $showCustomerPicker) {
             CustomerPickerView { customer in
                 if let mat = pendingMaterial {
-                    let item = makeQuoteItem(from: mat)
+                    let qty = Double(pendingQuantity.replacingOccurrences(of: ",", with: ".")) ?? 1.0
+                    let item = makeQuoteItem(from: mat, quantity: qty)
                     persistence.addItemsToQuote([item], forCustomer: customer)
                     pendingMaterial = nil
                 }
@@ -178,24 +208,17 @@ struct MaterialListView: View {
     // MARK: - Teklife Ekleme Mantığı
 
     private func addToQuote(material: Material) {
-        if persistence.activeQuoteId != nil {
-            // Aktif teklif var — doğrudan ekle
-            let item = makeQuoteItem(from: material)
-            persistence.addItemToActiveQuote(item)
-            showAddedConfirm = true
-        } else {
-            // Aktif teklif yok — müşteri seç
-            pendingMaterial = material
-            showCustomerPicker = true
-        }
+        pendingMaterial = material
+        pendingQuantity = "1"
+        showQuantitySheet = true
     }
 
-    private func makeQuoteItem(from material: Material) -> QuoteItem {
+    private func makeQuoteItem(from material: Material, quantity: Double = 1.0) -> QuoteItem {
         QuoteItem(
             title: material.name,
             description: material.brand,
             category: .material,
-            quantity: 1.0,
+            quantity: quantity,
             unit: material.unit,
             unitPrice: material.salePrice,
             vatRate: persistence.settings.defaultVatRate
@@ -616,6 +639,128 @@ struct MaterialFormSheet: View {
         catalogCode   = m.catalogCode ?? ""
         supplier      = m.supplier ?? ""
         notes         = m.notes ?? ""
+    }
+}
+
+// MARK: - Material Quantity Sheet
+
+struct MaterialQuantitySheet: View {
+    let material: Material
+    @Binding var quantity: String
+    let onComplete: (Double?) -> Void
+
+    private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
+    private let bg    = Color(red: 0.06, green: 0.06, blue: 0.09)
+
+    private var isMetraj: Bool { material.unit == "m" }
+    private var quantityLabel: String { isMetraj ? "Metraj (m)" : "Adet" }
+    private var qty: Double { Double(quantity.replacingOccurrences(of: ",", with: ".")) ?? 0 }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                bg.ignoresSafeArea()
+                VStack(spacing: 28) {
+                    VStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(material.category.accentColor.opacity(0.12))
+                                .frame(width: 64, height: 64)
+                            Image(systemName: material.category.systemIcon)
+                                .font(.system(size: 28, weight: .semibold))
+                                .foregroundColor(material.category.accentColor)
+                        }
+                        Text(material.name)
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                        if let brand = material.brand, !brand.isEmpty {
+                            Text(brand)
+                                .font(.system(size: 13))
+                                .foregroundColor(.gray)
+                        }
+                        Text("Birim Fiyat: \(fmtTL(material.salePrice)) / \(material.unit)")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundColor(amber)
+                    }
+                    .padding(.top, 24)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(quantityLabel)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(.gray)
+                        HStack(spacing: 12) {
+                            TextField("1", text: $quantity)
+                                .keyboardType(.decimalPad)
+                                .font(.system(size: 26, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                            Text(material.unit)
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundColor(.gray)
+                        }
+                        .padding(16)
+                        .background(Color.white.opacity(0.07))
+                        .cornerRadius(14)
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .padding(.horizontal, 24)
+
+                    if qty > 0 {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Tahmini Tutar")
+                                    .font(.system(size: 11, design: .rounded)).foregroundColor(.gray)
+                                Text(fmtTL(qty * material.salePrice))
+                                    .font(.system(size: 20, weight: .black, design: .rounded))
+                                    .foregroundColor(amber)
+                            }
+                            Spacer()
+                            Text("\(fmtQty(qty)) \(material.unit) × \(fmtTL(material.salePrice))")
+                                .font(.system(size: 11, design: .rounded)).foregroundColor(.gray)
+                        }
+                        .padding(.horizontal, 28)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        onComplete(qty > 0 ? qty : nil)
+                    } label: {
+                        Label("Teklife Ekle", systemImage: "doc.badge.plus")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(qty > 0 ? amber : Color.gray.opacity(0.3))
+                            .cornerRadius(16)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(qty <= 0)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
+                }
+            }
+            .navigationTitle("Miktar Gir")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("İptal") { onComplete(nil) }
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+    }
+
+    private func fmtTL(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency; f.currencySymbol = "₺"
+        f.locale = Locale(identifier: "tr_TR"); f.maximumFractionDigits = 2
+        return f.string(from: NSNumber(value: v)) ?? "₺0"
+    }
+
+    private func fmtQty(_ v: Double) -> String {
+        v.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(v))" : String(format: "%.1f", v)
     }
 }
 

@@ -8,29 +8,29 @@ import SwiftUI
 // MARK: - AppTab
 
 enum AppTab: Int, CaseIterable {
-    case calculator  = 0
+    case calculators = 0
     case solar       = 1
     case materials   = 2
     case engineering = 3
-    case quotes      = 4
+    case dashboard   = 4
 
     var title: String {
         switch self {
-        case .calculator:  return "Kablo Hesabı"
+        case .calculators: return "Hesaplar"
         case .solar:       return "Solar Güneş"
         case .materials:   return "Malzeme Listesi"
         case .engineering: return "Mühendislik"
-        case .quotes:      return "Teklif Paneli"
+        case .dashboard:   return "Dashboard"
         }
     }
 
     var icon: String {
         switch self {
-        case .calculator:  return "bolt.fill"
+        case .calculators: return "bolt.fill"
         case .solar:       return "sun.max.fill"
         case .materials:   return "list.bullet"
         case .engineering: return "chart.line.uptrend.xyaxis"
-        case .quotes:      return "doc.text"
+        case .dashboard:   return "house.fill"
         }
     }
 }
@@ -39,7 +39,7 @@ enum AppTab: Int, CaseIterable {
 
 struct MainTabView: View {
 
-    @State private var selectedTab: AppTab = .calculator
+    @State private var selectedTab: AppTab = .calculators
     @EnvironmentObject private var persistence: PersistenceService
 
     private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
@@ -49,43 +49,44 @@ struct MainTabView: View {
         let appearance = UITabBarAppearance()
         appearance.configureWithDefaultBackground()
         appearance.backgroundColor = UIColor(red: 0.08, green: 0.08, blue: 0.12, alpha: 0.98)
-        
+
         // Tab bar üst çizgisi (Subtle amber)
         appearance.shadowColor = UIColor(red: 1.0, green: 0.75, blue: 0.0, alpha: 0.15)
-        
+
         let itemAppearance = UITabBarItemAppearance()
-        
+
         // Seçili sekme görünümü
         itemAppearance.selected.iconColor = UIColor(red: 1.0, green: 0.75, blue: 0.0, alpha: 1.0)
         itemAppearance.selected.titleTextAttributes = [
             .foregroundColor: UIColor(red: 1.0, green: 0.75, blue: 0.0, alpha: 1.0),
             .font: UIFont.systemFont(ofSize: 10, weight: .semibold)
         ]
-        
+
         // Seçilmeyen sekme görünümü
         itemAppearance.normal.iconColor = UIColor.lightGray.withAlphaComponent(0.6)
         itemAppearance.normal.titleTextAttributes = [
             .foregroundColor: UIColor.lightGray.withAlphaComponent(0.6),
             .font: UIFont.systemFont(ofSize: 10, weight: .regular)
         ]
-        
+
         appearance.stackedLayoutAppearance = itemAppearance
         appearance.inlineLayoutAppearance = itemAppearance
         appearance.compactInlineLayoutAppearance = itemAppearance
-        
+
         UITabBar.appearance().standardAppearance = appearance
         UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            // Kablo / Yük / Aydınlatma / Kompanzasyon hesap ekranları
             NavigationStack {
-                CableCalculatorView()
+                ElectricCalculatorView()
             }
             .tabItem {
-                Label(AppTab.calculator.title, systemImage: AppTab.calculator.icon)
+                Label(AppTab.calculators.title, systemImage: AppTab.calculators.icon)
             }
-            .tag(AppTab.calculator)
+            .tag(AppTab.calculators)
 
             NavigationStack {
                 SolarCalculatorView()
@@ -111,13 +112,14 @@ struct MainTabView: View {
             }
             .tag(AppTab.engineering)
 
+            // Dashboard — QuoteBuilderView'a EngineeringPanelView üzerinden erişilebilir
             NavigationStack {
-                QuoteBuilderView()
+                DashboardView()
             }
             .tabItem {
-                Label(AppTab.quotes.title, systemImage: AppTab.quotes.icon)
+                Label(AppTab.dashboard.title, systemImage: AppTab.dashboard.icon)
             }
-            .tag(AppTab.quotes)
+            .tag(AppTab.dashboard)
         }
         .tint(amber)
         .background(bgColor.ignoresSafeArea())

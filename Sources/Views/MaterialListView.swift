@@ -15,7 +15,7 @@ struct MaterialListView: View {
     @State private var showAddSheet         = false
     @State private var editingMaterial: Material? = nil
     @State private var showLowStockOnly     = false
-    @State private var showQuoteBuilder     = false
+    @State private var quoteForMaterial: Quote? = nil
 
     private let amber  = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bg     = Color(red: 0.06, green: 0.06, blue: 0.09)
@@ -72,7 +72,7 @@ struct MaterialListView: View {
                                 } onDelete: {
                                     persistence.deleteMaterial(id: material.id)
                                 } onAddToQuote: {
-                                    showQuoteBuilder = true
+                                    quoteForMaterial = makeQuote(from: material)
                                 }
                                 .listRowBackground(Color.white.opacity(0.04))
                                 .listRowSeparator(.hidden)
@@ -106,9 +106,10 @@ struct MaterialListView: View {
         .sheet(item: $editingMaterial) { mat in
             MaterialFormSheet(material: mat, onSave: { persistence.saveMaterial($0) })
         }
-        .sheet(isPresented: $showQuoteBuilder) {
+        .sheet(item: $quoteForMaterial) { quote in
             NavigationStack {
-                QuoteBuilderView().environmentObject(persistence)
+                QuoteBuilderView(existingQuote: quote)
+                    .environmentObject(persistence)
             }
         }
     }
@@ -248,6 +249,26 @@ struct MaterialListView: View {
         .padding(.horizontal, 16)
         .background(bg)
         .listRowInsets(EdgeInsets())
+    }
+
+    // MARK: - Yardımcı
+
+    private func makeQuote(from material: Material) -> Quote {
+        let item = QuoteItem(
+            title: material.name,
+            description: material.brand,
+            category: .material,
+            quantity: 1.0,
+            unit: material.unit,
+            unitPrice: material.salePrice,
+            vatRate: persistence.settings.defaultVatRate
+        )
+        var quote = QuoteEngine.createNewQuote(
+            sequence: persistence.settings.nextQuoteNumber,
+            settings: persistence.settings
+        )
+        quote.items = [item]
+        return quote
     }
 
     // MARK: - Boş Durum

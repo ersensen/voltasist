@@ -12,7 +12,6 @@ import SwiftUI
 struct LightingCalculatorView: View {
 
     // MARK: State — Girdi
-    @State private var areaM2: String           = "20"
     @State private var ceilingHeightM: String   = "2.7"
     @State private var lengthM: String          = "5"
     @State private var widthM: String           = "4"

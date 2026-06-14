@@ -48,8 +48,11 @@ enum CompTab: Int, CaseIterable {
 /// Kompanzasyon hesap ekranı — 7 sekme
 struct CompensationCalculatorView: View {
 
+    @EnvironmentObject private var persistence: PersistenceService
+
     // MARK: State — Sekme
     @State private var selectedTab: CompTab = .current
+    @State private var showQuoteAdded = false
 
     // MARK: State — Ortak Parametreler
     @State private var activePowerKW: String     = "100"
@@ -69,7 +72,7 @@ struct CompensationCalculatorView: View {
     @State private var transformerKVA: String    = "250"
 
     // MARK: State — Hesaplanan (paylaşılan)
-    @State private var currentCosPhi: Double     = 0.0
+    @State private var currentCosPhi: Double     = 100.0 / 140.0
     @State private var requiredQcKVAr: Double    = 0.0
     @State private var monthlySaving: Double     = 0.0
 
@@ -98,6 +101,11 @@ struct CompensationCalculatorView: View {
         .onChange(of: activePowerKW)    { _, _ in recalculate() }
         .onChange(of: apparentPowerKVA) { _, _ in recalculate() }
         .onChange(of: targetCosPhi)     { _, _ in recalculate() }
+        .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text("Kompanzasyon kalemleri yeni taslak teklife eklendi.")
+        }
     }
 
     // MARK: - Sekme Seçici
@@ -246,7 +254,7 @@ struct CompensationCalculatorView: View {
     }
 
     private var penaltyCard: some View {
-        let monthly = requiredQcKVAr > 0 ? requiredQcKVAr * penaltyRate * 30 : 0
+        let monthly = requiredQcKVAr > 0 ? requiredQcKVAr * 720 * penaltyRate : 0
         let yearly  = monthly * 12
 
         return VStack(spacing: 12) {
@@ -658,7 +666,7 @@ struct CompensationCalculatorView: View {
             HStack(spacing: 0) {
                 trafoGainCell(label: "Kapasite Kazanımı", value: String(format: "%.0f kVA", capacityGain), color: Color.green)
                 Divider().background(amber.opacity(0.2)).frame(height: 55)
-                trafoGainCell(label: "Bakır Kaybı Azalması", value: String(format: "%%.0f%%", max(0, copperLossReduction)), color: amber)
+                trafoGainCell(label: "Bakır Kaybı Azalması", value: String(format: "%.0f%%", max(0, copperLossReduction)), color: amber)
             }
             .padding(18)
             .glassCard(borderColor: Color.green.opacity(0.3))
@@ -854,7 +862,32 @@ struct CompensationCalculatorView: View {
             // Aksiyon butonları
             VStack(spacing: 12) {
                 Button {
+                    guard currentCosPhi > 0, currentCosPhi < targetCosPhi else { return }
+                    let compInput = CompensationInput(
+                        activePowerKW: Double(activePowerKW) ?? 0,
+                        apparentPowerKVA: Double(apparentPowerKVA) ?? 0,
+                        measuredCosPhi: currentCosPhi,
+                        targetCosPhi: targetCosPhi,
+                        systemVoltageV: Double(systemVoltage) ?? 400,
+                        transformerKVA: Double(transformerKVA),
+                        totalHarmonicDistortion: thdPercent,
+                        electricityTariff: penaltyRate,
+                        investmentCostTL: Double(investmentCost) ?? 25000
+                    )
+                    if let compResult = try? CompensationEngine.calculate(input: compInput) {
+                        let items = QuoteEngine.itemsFromCompensation(compResult)
+                        var quote = QuoteEngine.createNewQuote(
+                            sequence: persistence.settings.nextQuoteNumber,
+                            settings: persistence.settings
+                        )
+                        quote.items = items
+                        persistence.saveQuote(quote)
+                        var updatedSettings = persistence.settings
+                        updatedSettings.nextQuoteNumber += 1
+                        persistence.saveSettings(updatedSettings)
+                    }
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    showQuoteAdded = true
                 } label: {
                     Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -919,7 +952,7 @@ struct CompensationCalculatorView: View {
         requiredQcKVAr = max(0, qc)
 
         // Aylık tasarruf: TEDAŞ ceza kaçınımı + bakır kaybı azalması
-        monthlySaving = requiredQcKVAr * penaltyRate * 30
+        monthlySaving = requiredQcKVAr * 720 * penaltyRate
     }
 
     // MARK: - Yardımcı Fonksiyonlar

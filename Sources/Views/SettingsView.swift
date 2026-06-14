@@ -134,8 +134,6 @@ struct SettingsView: View {
 
     private var compensationSection: some View {
         settingsCard(title: "⚡ Kompanzasyon Parametreleri", icon: "bolt.circle.fill") {
-            numericField(label: "Hedef cos φ", suffix: "", value: $vm.settings.defaultTargetCosPhi)
-                .keyboardType(.decimalPad)
             HStack {
                 Text("Hedef cos φ")
                     .font(.system(size: 12, weight: .semibold))

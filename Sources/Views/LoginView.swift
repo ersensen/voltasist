@@ -5,7 +5,7 @@ import SwiftUI
 public struct LoginView: View {
     
     // MARK: - ViewModel Dependency
-    @StateObject private var viewModel = LoginViewModel()
+    @EnvironmentObject private var viewModel: LoginViewModel
     
     // MARK: - Local UI States
     @State private var isPasswordVisible = false
@@ -340,4 +340,5 @@ struct ShakeEffect: GeometryEffect {
 // MARK: - SwiftUI Preview Support
 #Preview {
     LoginView()
+        .environmentObject(LoginViewModel())
 }

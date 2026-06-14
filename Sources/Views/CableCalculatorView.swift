@@ -68,8 +68,10 @@ struct CableCalculatorView: View {
     @State private var result: CableCalculationResult? = nil
     @State private var resultVisible = false
     @State private var isCalculating = false
-    @State private var showAddToQuote = false
+    @State private var showQuoteAdded = false
     @State private var warningShake = false
+
+    @EnvironmentObject private var persistence: PersistenceService
 
     // Tasarım Renkleri (Mockup'tan Birebir Alınan Premium Palet)
     private let amber = Color(red: 1.0, green: 0.75, blue: 0.0) // Kehribar vurgu rengi
@@ -118,6 +120,11 @@ struct CableCalculatorView: View {
         .background(darkBG.ignoresSafeArea())
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text("Kablo kalemleri yeni taslak teklife eklendi.")
+        }
     }
 
     // MARK: - Header
@@ -276,7 +283,7 @@ struct CableCalculatorView: View {
                                     .font(.system(size: 13, weight: isSelected ? .bold : .medium))
                                     .foregroundColor(isSelected ? .white : .gray)
                                 Spacer()
-                                Text(String(format: "Max %%.1f", item.limit).replacingOccurrences(of: "%%", with: "%"))
+                                Text(String(format: "Max %.1f%%", item.limit))
                                     .font(.system(size: 11, weight: .bold, design: .rounded))
                                     .foregroundColor(isSelected ? .black : .gray)
                                     .padding(.horizontal, 8)
@@ -503,7 +510,23 @@ struct CableCalculatorView: View {
             Divider().background(Color.white.opacity(0.1)).padding(.vertical, 16)
 
             Button {
-                showAddToQuote = true
+                guard let res = result else { return }
+                let length = Double(lengthM.replacingOccurrences(of: ",", with: ".")) ?? 50.0
+                let conductor: ConductorType = isCopper ? .copper : .aluminum
+                let install: InstallationType = selectedInsulation == .nym ? .surface : .inConduit
+                let items = QuoteEngine.itemsFromCableCalculation(
+                    res, lengthM: length, conductorType: conductor, installationType: install
+                )
+                var quote = QuoteEngine.createNewQuote(
+                    sequence: persistence.settings.nextQuoteNumber,
+                    settings: persistence.settings
+                )
+                quote.items = items
+                persistence.saveQuote(quote)
+                var updatedSettings = persistence.settings
+                updatedSettings.nextQuoteNumber += 1
+                persistence.saveSettings(updatedSettings)
+                showQuoteAdded = true
             } label: {
                 Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
                     .font(.system(size: 14, weight: .bold, design: .rounded))

@@ -179,7 +179,10 @@ struct DashboardView: View {
                 spacing: 12
             ) {
                 ForEach(quickItems, id: \.0) { item in
-                    quickButton(title: item.0, icon: item.1, color: item.2)
+                    NavigationLink(destination: quickDestination(for: item.0)) {
+                        quickButton(title: item.0, icon: item.1, color: item.2)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -205,6 +208,20 @@ struct DashboardView: View {
                 .foregroundColor(.white.opacity(0.8))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+        }
+    }
+
+    private func quickDestination(for title: String) -> AnyView {
+        switch title {
+        case "Kablo Kesit":  return AnyView(CableCalculatorView())
+        case "Yük / Güç":    return AnyView(LoadCalculatorView())
+        case "Aydınlatma":   return AnyView(LightingCalculatorView())
+        case "Kompanz.":     return AnyView(CompensationCalculatorView())
+        case "Solar":        return AnyView(SolarCalculatorView())
+        case "Teklif":       return AnyView(QuoteBuilderView())
+        case "Müşteriler":   return AnyView(CustomerListView())
+        case "Malzeme":      return AnyView(MaterialListView())
+        default:             return AnyView(EmptyView())
         }
     }
 

@@ -279,8 +279,10 @@ struct SolarCalculatorView: View {
         TabView {
             panelResultView(result)
                 .tabItem { Label("Panel", systemImage: "square.grid.3x3.fill") }
-            batteryResultView(result)
-                .tabItem { Label("Batarya", systemImage: "battery.100") }
+            if vm.input.systemType != .onGrid {
+                batteryResultView(result)
+                    .tabItem { Label("Batarya", systemImage: "battery.100") }
+            }
             economyResultView(result)
                 .tabItem { Label("Ekonomi", systemImage: "chart.line.uptrend.xyaxis") }
             co2ResultView(result)
@@ -403,7 +405,18 @@ struct SolarCalculatorView: View {
 
             // Teklif'e ekle
             Button(action: {
-                // Yeni teklif oluşturup QuoteViewModel'i günceller
+                if let res = vm.result {
+                    let items = QuoteEngine.itemsFromSolar(res, input: vm.input)
+                    var quote = QuoteEngine.createNewQuote(
+                        sequence: persistence.settings.nextQuoteNumber,
+                        settings: persistence.settings
+                    )
+                    quote.items = items
+                    persistence.saveQuote(quote)
+                    var updatedSettings = persistence.settings
+                    updatedSettings.nextQuoteNumber += 1
+                    persistence.saveSettings(updatedSettings)
+                }
                 showQuoteAlert = true
             }) {
                 Label("Teklif'e Ekle", systemImage: "doc.badge.plus")

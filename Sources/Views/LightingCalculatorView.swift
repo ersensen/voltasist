@@ -33,6 +33,9 @@ struct LightingCalculatorView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
+                // Kullanım talimatı
+                lightingUsageNote
+
                 // Girdi kartı
                 inputCard
 
@@ -51,6 +54,32 @@ struct LightingCalculatorView: View {
             .padding(.top, 12)
         }
         .background(bgColor.ignoresSafeArea())
+    }
+
+    // MARK: - Kullanım Notu
+
+    private var lightingUsageNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(amber)
+                .font(.system(size: 16))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nasıl Kullanılır?")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(amber)
+                Text("Oda boyutlarını, tavan yüksekliğini ve kullanım tipini girin. EN 12464-1 standardına göre gerekli aydınlık düzeyi (lüx) belirlenir. Armatür gücü (W) ve lümen değerini girerek ihtiyaç duyulan armatür adedi hesaplanır.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(amber.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(amber.opacity(0.22), lineWidth: 1))
+        )
     }
 
     // MARK: - Girdi Kartı

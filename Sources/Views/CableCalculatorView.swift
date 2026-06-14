@@ -87,6 +87,9 @@ struct CableCalculatorView: View {
                 // Header (Mockup ile birebir aynı)
                 headerSection
 
+                // Kullanım talimatı
+                cableUsageNote
+
                 // Üst Seçim: Otomatik Kesit Önerisi / Manuel Deneme-Yanılma
                 modeSelector
 
@@ -140,6 +143,32 @@ struct CableCalculatorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.bottom, 4)
+    }
+
+    // MARK: - Kullanım Notu
+
+    private var cableUsageNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundColor(amber)
+                .font(.system(size: 16))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nasıl Kullanılır?")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(amber)
+                Text("Güç (kW) ve hat uzunluğunu (m) girin, cos φ ile paralel grup sayısını belirleyin. Otomatik modda en uygun kablo kesiti önerilir; Manuel modda farklı kesitleri bizzat deneyebilirsiniz. Sonuçlarda gerilim düşümü, bakır kaybı ve limit uygunluğu gösterilir.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundColor(.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(amber.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(amber.opacity(0.22), lineWidth: 1))
+        )
     }
 
     // MARK: - Mod Seçici (Otomatik / Manuel)

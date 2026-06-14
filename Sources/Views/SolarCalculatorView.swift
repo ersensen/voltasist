@@ -33,6 +33,9 @@ struct SolarCalculatorView: View {
                     // Başlık
                     solarHeader
 
+                    // Kullanım talimatı
+                    solarUsageNote
+
                     // Parametreler
                     parametersCard
 
@@ -88,6 +91,32 @@ struct SolarCalculatorView: View {
         .background(.ultraThinMaterial)
         .cornerRadius(16)
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(sunGold.opacity(0.2), lineWidth: 1))
+    }
+
+    // MARK: - Kullanım Notu
+
+    private var solarUsageNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundColor(sunGold)
+                .font(.system(size: 16))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nasıl Kullanılır?")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(sunGold)
+                Text("Şehir seçin, günlük tüketim ve çatı alanını girin. On-Grid (şebeke bağlantılı), Off-Grid (bağımsız) veya Hibrit sistem tipini seçin. Hesapla'ya basın; panel kapasitesi, inverter gücü ve 25 yıllık ekonomik analiz otomatik hesaplanır.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundColor(.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(sunGold.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(sunGold.opacity(0.22), lineWidth: 1))
+        )
     }
 
     // MARK: - Parametreler Kartı

@@ -68,6 +68,7 @@ struct SolarCalculatorView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
+            .scrollDismissesKeyboard(.immediately)
         }
         .navigationBarHidden(true)
         .sheet(isPresented: $showCityPicker) {
@@ -230,6 +231,13 @@ struct SolarCalculatorView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: vm.input.systemType) { _, newType in
+                    switch newType {
+                    case .hybrid:  vm.input.autonomyDays = 1.0
+                    case .offGrid: vm.input.autonomyDays = 2.0
+                    case .onGrid:  break
+                    }
+                }
             }
 
             // Eğim ve Yön (yan yana)
@@ -318,6 +326,21 @@ struct SolarCalculatorView: View {
                         .background(Color.white.opacity(0.05))
                         .cornerRadius(10)
                     }
+                }
+
+                if vm.input.systemType == .hybrid {
+                    let dailyKWh = vm.input.monthlyConsumptionKWh / 30.0
+                    let rawKWh = (dailyKWh * vm.input.autonomyDays) / max(vm.input.batteryType.dod, 0.01)
+                    let totalKWh = rawKWh / max(vm.input.batteryType.efficiency, 0.01)
+                    HStack(spacing: 6) {
+                        Image(systemName: "battery.75")
+                            .font(.system(size: 12))
+                            .foregroundColor(sunGold.opacity(0.8))
+                        Text(String(format: "≈ %.1f kWh hibrit batarya kapasitesi", totalKWh))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(sunGold)
+                    }
+                    .padding(.horizontal, 4)
                 }
             }
 
@@ -813,11 +836,11 @@ struct SolarCalculatorView: View {
 
     private func formatTL(_ value: Double) -> String {
         let fmt = NumberFormatter()
-        fmt.numberStyle = .currency
-        fmt.currencySymbol = "₺"
+        fmt.numberStyle = .decimal
         fmt.locale = Locale(identifier: "tr_TR")
-        fmt.maximumFractionDigits = 0
-        return fmt.string(from: NSNumber(value: value)) ?? "₺0"
+        fmt.minimumFractionDigits = 2
+        fmt.maximumFractionDigits = 2
+        return (fmt.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)) + " ₺"
     }
 }
 

@@ -7,6 +7,11 @@
 import SwiftUI
 
 extension View {
+    /// Aktif klavyeyi kapat — tüm ekranlarda kullanılabilir
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
     /// Glassmorphism kart stili — amber kenarlık varsayılan
     func glassCard(borderColor: Color = Color(red: 1.0, green: 0.75, blue: 0.0).opacity(0.3)) -> some View {
         self

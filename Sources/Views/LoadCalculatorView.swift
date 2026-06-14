@@ -5,7 +5,6 @@
 // Cihaz listesi yönetimi, talep gücü, görünür güç, fatura tahmini ve bar chart.
 
 import SwiftUI
-import Charts
 
 // MARK: - LoadCalculatorView
 
@@ -26,7 +25,10 @@ struct LoadCalculatorView: View {
     @State private var result: LoadCalculationResult? = nil
     @State private var resultVisible: Bool      = false
     @State private var showQuoteAdded: Bool     = false
+    @State private var showTransferAlert: Bool  = false
+    @State private var transferredKW: Double    = 0
 
+    @AppStorage("pendingCableKW") private var pendingCableKW: Double = 0
     @EnvironmentObject private var persistence: PersistenceService
 
     // MARK: Tasarım
@@ -63,6 +65,11 @@ struct LoadCalculatorView: View {
             .padding(.top, 12)
         }
         .background(bgColor.ignoresSafeArea())
+        .alert("Kablo Hesabına Aktarıldı", isPresented: $showTransferAlert) {
+            Button("Tamam", role: .cancel) {}
+        } message: {
+            Text(String(format: "%.2f kW talep gücü aktarıldı. Kablo Hesabı sekmesine geçin — değer hazır yüklendi.", transferredKW))
+        }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
@@ -276,8 +283,21 @@ struct LoadCalculatorView: View {
             // Fatura tahmini
             billCard(res)
 
-            // Bar chart
-            chartCard(res)
+            // Kablo hesabına aktar
+            Button {
+                pendingCableKW = res.demandKW
+                transferredKW = res.demandKW
+                showTransferAlert = true
+            } label: {
+                Label("Kablo Hesabına Aktar", systemImage: "arrow.right.circle.fill")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(red: 0.23, green: 0.51, blue: 0.96))
+                    .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
 
             // Teklif butonu
             Button {
@@ -315,11 +335,10 @@ struct LoadCalculatorView: View {
                 Spacer()
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 powerValueCell(label: "Bağlı Güç", value: String(format: "%.2f kW", res.totalConnectedKW), color: amber)
                 powerValueCell(label: "Talep Gücü", value: String(format: "%.2f kW", res.demandKW), color: .orange)
                 powerValueCell(label: "Görünür Güç", value: String(format: "%.2f kVA", res.apparentKVA), color: .cyan)
-                powerValueCell(label: "Reaktif Güç", value: String(format: "%.2f kVAr", res.reactiveKVAr), color: .purple)
             }
 
             Divider().background(amber.opacity(0.2))
@@ -384,25 +403,7 @@ struct LoadCalculatorView: View {
                 billValue(label: "Aylık kWh", value: String(format: "%.0f kWh", res.monthlyKWh), color: amber)
                 Divider().background(amber.opacity(0.2)).frame(height: 55)
                 billValue(label: "Aylık Fatura", value: res.monthlyBillTL.currencyFormatted, color: .orange)
-                Divider().background(amber.opacity(0.2)).frame(height: 55)
-                billValue(label: "Yıllık Fatura", value: res.yearlyBillTL.currencyFormatted, color: .cyan)
             }
-
-            // CO2 badge
-            HStack(spacing: 8) {
-                Image(systemName: "leaf.fill")
-                    .foregroundStyle(.green)
-                Text(String(format: "Yıllık CO₂: %.2f ton/yıl", res.co2KgPerYear / 1000.0))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.green)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(Color.green.opacity(0.12))
-                    .overlay(Capsule().stroke(Color.green.opacity(0.4), lineWidth: 1))
-            )
         }
         .padding(18)
         .glassCard(borderColor: Color.green.opacity(0.3))
@@ -420,53 +421,6 @@ struct LoadCalculatorView: View {
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private func chartCard(_ res: LoadCalculationResult) -> some View {
-        let chartData = res.categoryBreakdown.sorted { $0.value > $1.value }
-
-        VStack(spacing: 14) {
-            HStack {
-                Image(systemName: "chart.bar.fill").foregroundStyle(amber)
-                Text("Yük Dağılımı (kW)")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Spacer()
-            }
-
-            Chart(chartData, id: \.key) { item in
-                BarMark(
-                    x: .value("Kategori", item.key),
-                    y: .value("Güç (kW)", item.value)
-                )
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [amber, Color.orange],
-                        startPoint: .bottom,
-                        endPoint: .top
-                    )
-                )
-                .cornerRadius(6)
-            }
-            .frame(height: 180)
-            .chartYAxis {
-                AxisMarks(values: .automatic) { _ in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
-                        .foregroundStyle(Color.white.opacity(0.1))
-                    AxisValueLabel()
-                        .foregroundStyle(Color.gray.opacity(0.6))
-                }
-            }
-            .chartXAxis {
-                AxisMarks { _ in
-                    AxisValueLabel()
-                        .foregroundStyle(Color.gray.opacity(0.6))
-                }
-            }
-        }
-        .padding(18)
-        .glassCard(borderColor: amber.opacity(0.25))
     }
 
     // MARK: - Hesaplama

@@ -35,7 +35,7 @@ struct QuoteEngine {
 
         // 1. Kablo malzemesi
         // NYM-J 3×n mm² kablo birim fiyatı (TL/m) — yaklaşık piyasa
-        let cableUnitPrice = cablelPricePerMeter(sectionMM2: section, conductorType: conductorType)
+        let cableUnitPrice = cablePricePerMeter(sectionMM2: section, conductorType: conductorType)
         items.append(QuoteItem(
             title: "NYM-J \(conductorName) Kablo \(formatSection(section)) mm²",
             description: "IEC 60228 uyumlu PVC izoleli \(conductorName.lowercased()) kablo, 3 damarlı",
@@ -218,7 +218,6 @@ struct QuoteEngine {
         }
 
         // 4. Çatı montaj sistemi
-        let rackingPrice = Double(result.panelCount) * 450.0
         items.append(QuoteItem(
             title: "Çatı Montaj Sistemi (Alüminyum Profil)",
             description: "Galvaniz çatı kancaları, alüminyum ray sistemi, paslanmaz vida seti",
@@ -263,9 +262,6 @@ struct QuoteEngine {
             unitPrice: 2_500.0,
             vatRate: 0.20
         ))
-
-        // Kullanılmayan değişken için
-        _ = rackingPrice
 
         return items
     }
@@ -412,7 +408,7 @@ struct QuoteEngine {
     // MARK: Yardımcı Fiyat Fonksiyonları
 
     /// Kablo birim fiyatı (TL/m) — kesit ve iletkene göre yaklaşık piyasa fiyatı
-    private static func cablelPricePerMeter(sectionMM2: Double, conductorType: ConductorType) -> Double {
+    private static func cablePricePerMeter(sectionMM2: Double, conductorType: ConductorType) -> Double {
         let basePrice: Double
         switch sectionMM2 {
         case 1.5:  basePrice = 12.0

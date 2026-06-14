@@ -108,7 +108,10 @@ struct LoadEngine {
             recommendedMainFuseA: recommendedMainFuse,
             categoryBreakdown: categoryBreakdown,
             largestLoadName: largestLoad?.name ?? "-",
-            largestLoadKW: (largestLoad.map { $0.powerW * Double($0.quantity) } ?? 0.0) / 1000.0
+            largestLoadKW: largestLoad.map { l in
+                let df = l.localDemandFactor ?? input.demandFactor
+                return (l.powerW * Double(l.quantity) * df) / 1000.0
+            } ?? 0.0
         )
     }
 

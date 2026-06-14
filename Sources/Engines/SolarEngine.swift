@@ -182,8 +182,8 @@ struct SolarEngine {
         }
 
         // --- 10. İnverter Boyutu ---
-        // DC/AC oranı 1.2 önerilir (oversizing)
-        let inverterKW = installedKWp * 1.0  // On-grid için eşit boyutlandırma
+        // DC/AC oranı 1.2 — IEC 62109 standart oversizing
+        let inverterKW = installedKWp / 1.2
         let dcAcRatio  = installedKWp / max(inverterKW, 0.001)
 
         return SolarCalculationResult(

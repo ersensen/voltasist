@@ -72,6 +72,7 @@ struct CableCalculatorView: View {
     @State private var warningShake = false
 
     @EnvironmentObject private var persistence: PersistenceService
+    @AppStorage("pendingCableKW") private var pendingCableKW: Double = 0
 
     // Tasarım Renkleri (Mockup'tan Birebir Alınan Premium Palet)
     private let amber = Color(red: 1.0, green: 0.75, blue: 0.0) // Kehribar vurgu rengi
@@ -123,6 +124,12 @@ struct CableCalculatorView: View {
         .background(darkBG.ignoresSafeArea())
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            if pendingCableKW > 0 {
+                powerKW = String(format: "%.2f", pendingCableKW)
+                pendingCableKW = 0
+            }
+        }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {

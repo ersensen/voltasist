@@ -324,9 +324,11 @@ extension Double {
 
     var currencyFormatted: String {
         let f = NumberFormatter()
-        f.numberStyle = .currency; f.currencySymbol = "₺"
-        f.locale = Locale(identifier: "tr_TR"); f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: self)) ?? "₺\(Int(self))"
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "tr_TR")
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        return (f.string(from: NSNumber(value: self)) ?? String(format: "%.2f", self)) + " ₺"
     }
 }
 

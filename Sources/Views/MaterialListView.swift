@@ -73,6 +73,10 @@ struct MaterialListView: View {
                                     persistence.deleteMaterial(id: material.id)
                                 } onAddToQuote: {
                                     quoteForMaterial = makeQuote(from: material)
+                                } onBrandChange: { newBrand in
+                                    var updated = material
+                                    updated.brand = newBrand.isEmpty ? nil : newBrand
+                                    persistence.saveMaterial(updated)
                                 }
                                 .listRowBackground(Color.white.opacity(0.04))
                                 .listRowSeparator(.hidden)
@@ -314,6 +318,9 @@ struct MaterialRow: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onAddToQuote: () -> Void
+    let onBrandChange: (String) -> Void
+
+    @State private var brandText = ""
 
     private let amber = Color(red: 1.0, green: 0.75, blue: 0.0)
 
@@ -342,12 +349,11 @@ struct MaterialRow: View {
                             .foregroundColor(.orange)
                     }
                 }
-                if let brand = material.brand, !brand.isEmpty {
-                    Text(brand)
-                        .font(.system(size: 11))
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
-                }
+                TextField("Marka...", text: $brandText)
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+                    .autocorrectionDisabled()
+                    .onSubmit { onBrandChange(brandText) }
                 Text("Stok: \(fmtQty(material.stockQuantity)) \(material.unit)")
                     .font(.system(size: 11))
                     .foregroundColor(material.isLowStock && material.minStockLevel > 0 ? .orange : Color.gray.opacity(0.6))
@@ -369,6 +375,7 @@ struct MaterialRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .onAppear { brandText = material.brand ?? "" }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive, action: onDelete) {
                 Label("Sil", systemImage: "trash")

@@ -103,8 +103,14 @@ enum BatteryType: String, Codable, CaseIterable, Identifiable {
 
 /// Solar sistem boyutlandırma için gerekli giriş parametreleri
 struct SolarCalculationInput: Codable {
-    /// Aylık elektrik tüketimi (kWh/ay) — fatura verisi
-    var monthlyConsumptionKWh: Double
+    /// Talep gücü (kW) — elektrik tesisatının toplam bağlı yükü
+    var demandKW: Double
+
+    /// Günlük kullanım süresi (saat/gün)
+    var dailyUsageHours: Double
+
+    /// Aylık tüketim (kWh/ay) — türetilmiş: talep × kullanım süresi × 30
+    var monthlyConsumptionKWh: Double { demandKW * dailyUsageHours * 30.0 }
 
     /// Kurulum yapılacak il
     var city: TurkishCity
@@ -137,7 +143,8 @@ struct SolarCalculationInput: Codable {
     var installationCostPerKWp: Double
 
     init(
-        monthlyConsumptionKWh: Double = 400.0,
+        demandKW: Double = 2.0,
+        dailyUsageHours: Double = 8.0,
         city: TurkishCity = .ankara,
         roofTiltDeg: Double = 30.0,
         roofOrientationDeg: Double = 0.0,
@@ -149,7 +156,8 @@ struct SolarCalculationInput: Codable {
         electricityPrice: Double = 4.50,
         installationCostPerKWp: Double = 25_000.0
     ) {
-        self.monthlyConsumptionKWh = monthlyConsumptionKWh
+        self.demandKW = demandKW
+        self.dailyUsageHours = dailyUsageHours
         self.city = city
         self.roofTiltDeg = roofTiltDeg
         self.roofOrientationDeg = roofOrientationDeg
@@ -163,7 +171,8 @@ struct SolarCalculationInput: Codable {
     }
 
     var isValid: Bool {
-        return monthlyConsumptionKWh > 0
+        return demandKW > 0
+            && dailyUsageHours > 0
             && electricityPrice > 0
             && installationCostPerKWp > 0
             && [12, 24, 48].contains(systemVoltage)

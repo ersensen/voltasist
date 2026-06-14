@@ -121,7 +121,7 @@ struct SolarCalculatorView: View {
                 Text("Nasıl Kullanılır?")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(sunGold)
-                Text("Şehir seçin, günlük tüketim ve çatı alanını girin. On-Grid (şebeke bağlantılı), Off-Grid (bağımsız) veya Hibrit sistem tipini seçin. Hesapla'ya basın; panel kapasitesi, inverter gücü ve 25 yıllık ekonomik analiz otomatik hesaplanır.")
+                Text("Talep gücünüzü (kW) ve günlük kullanım süresini (saat/gün) girin — aylık tüketim otomatik hesaplanır. Şehir ve sistem tipini seçin. Hesapla'ya basın; panel kapasitesi, inverter gücü ve 25 yıllık ekonomik analiz otomatik hesaplanır.")
                     .font(.system(size: 12, design: .rounded))
                     .foregroundColor(.white.opacity(0.65))
                     .fixedSize(horizontal: false, vertical: true)
@@ -141,20 +141,62 @@ struct SolarCalculatorView: View {
         VStack(alignment: .leading, spacing: 18) {
             sectionLabel("📋 Sistem Parametreleri")
 
-            // Aylık tüketim
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Aylık Tüketim")
-                        .font(.system(size: 13, weight: .semibold))
+            // Talep Gücü + Günlük Kullanım
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Talep Gücü")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.gray)
-                    Spacer()
-                    Text(String(format: "%.0f kWh", vm.input.monthlyConsumptionKWh))
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(sunGold)
+                    HStack {
+                        TextField("2.0", value: $vm.input.demandKW, format: .number)
+                            .keyboardType(.decimalPad)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("kW")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(10)
                 }
-                Slider(value: $vm.input.monthlyConsumptionKWh, in: 100...5000, step: 50)
-                    .tint(sunGold)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Günlük Kullanım")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.gray)
+                    HStack {
+                        TextField("8", value: $vm.input.dailyUsageHours, format: .number.precision(.fractionLength(0)))
+                            .keyboardType(.decimalPad)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("saat/gün")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(10)
+                }
             }
+
+            // Türetilmiş aylık tüketim
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 10))
+                    .foregroundColor(sunGold.opacity(0.6))
+                Text("Aylık Tüketim:")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.gray)
+                Text(String(format: "≈ %.0f kWh/ay", vm.input.monthlyConsumptionKWh))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(sunGold)
+                Spacer()
+                Text("talep × saat × 30")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray.opacity(0.45))
+            }
+            .padding(.horizontal, 4)
 
             // Şehir seçimi
             Button(action: { showCityPicker = true }) {

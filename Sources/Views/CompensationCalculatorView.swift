@@ -169,6 +169,9 @@ struct CompensationCalculatorView: View {
 
     private var currentStatusTab: some View {
         VStack(spacing: 16) {
+            // Kullanım talimatı
+            usageNoteCard
+
             // Güç girişleri
             VStack(spacing: 14) {
                 HStack {
@@ -206,7 +209,110 @@ struct CompensationCalculatorView: View {
             }
             .padding(18)
             .glassCard(borderColor: Color.green.opacity(0.3))
+
+            // Hap Bilgiler
+            hapBilgilerSection
         }
+    }
+
+    private var usageNoteCard: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(amber)
+                .font(.system(size: 16))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nasıl Kullanılır?")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(amber)
+                Text("Aktif güç (kW) ve görünür güç (kVA) değerlerini girin. cos φ, gerekli Qc kapasitesi ve TEDAŞ ceza tahmini otomatik hesaplanır. Diğer sekmelerde kondansatör seçimi, AKP panel önerisi ve ekonomik analiz bulunur.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(amber.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(amber.opacity(0.22), lineWidth: 1))
+        )
+    }
+
+    private var hapBilgilerSection: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Image(systemName: "lightbulb.fill").foregroundStyle(amber)
+                Text("Hap Bilgiler")
+                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Spacer()
+                Text("6 kart")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+            }
+            .padding(.bottom, 2)
+
+            hapCard(
+                icon: "bolt.circle.fill", color: .yellow,
+                title: "cos φ Nedir?",
+                body: "Aktif güç (kW) ile görünür güç (kVA) arasındaki oran. cos φ = P / S formülüyle hesaplanır. 1.0 ideal, 0.95 TEDAŞ sınırı, 0.85 altı kritik durum."
+            )
+            hapCard(
+                icon: "exclamationmark.triangle.fill", color: .orange,
+                title: "Neden Önemli?",
+                body: "Düşük cos φ; kablolarda gereksiz ısınmaya, transformatör kapasitesinin azalmasına ve iletim kayıplarının artmasına yol açar. Sisteminiz olduğundan daha büyük boyutlandırılmak zorunda kalır."
+            )
+            hapCard(
+                icon: "banknote.fill", color: .red,
+                title: "TEDAŞ Ceza Sınırı",
+                body: "cos φ < 0.95 durumunda TEDAŞ reaktif enerji bedeli tahakkuk ettirir. 2024 tarifesi ~0.40 ₺/kVArh. Gece 22:00–06:00 arasında çekilen reaktif güç 2 kat fiyatlandırılır."
+            )
+            hapCard(
+                icon: "waveform.path.ecg", color: .purple,
+                title: "Reaktif Güç Zararları",
+                body: "Reaktif akım I² × R ile hat kayıplarını doğrudan artırır. Kablolar erken yaşlanır, trafo nötr akımı yükselir, kesiciler yanlış boyutlandırılır ve genel verim düşer."
+            )
+            hapCard(
+                icon: "cylinder.split.1x2.fill", color: .cyan,
+                title: "Kondansatör Ömrü",
+                body: "Kaliteli MKP (metalik polipropilen) kondansatör 10–15 yıl dayanabilir. 40°C üzerinde her 10°C sıcaklık artışı ömrü yarıya indirir. İyi havalandırma kritik önem taşır."
+            )
+            hapCard(
+                icon: "wrench.and.screwdriver.fill", color: .green,
+                title: "Bakım Tavsiyeleri",
+                body: "Her 6 ayda bir terminal sıkılığı ve korozyon kontrolü yapın. Yılda bir kapasite ölçümü (%80 altına düşmüş kondansatörü değiştirin). Harmonik sorunları için THD analizi izleyin."
+            )
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.10, green: 0.10, blue: 0.13))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.18), lineWidth: 1))
+        )
+    }
+
+    private func hapCard(icon: String, color: Color, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(color)
+                .frame(width: 24)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(body)
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.60))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(color.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.2), lineWidth: 1))
+        )
     }
 
     private var cosPhiGauge: some View {

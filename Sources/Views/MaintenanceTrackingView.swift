@@ -233,10 +233,11 @@ struct MaintenanceRecordDetailView: View {
     let record: MaintenanceRecord
 
     @State private var localRecord: MaintenanceRecord
-    @State private var showAddReading  = false
-    @State private var showEditRecord  = false
-    @State private var showAddVisit    = false
-    @State private var showDetails     = false
+    @State private var showAddReading    = false
+    @State private var showEditRecord    = false
+    @State private var showAddVisit      = false
+    @State private var showDetails       = false
+    @State private var showDeleteConfirm = false
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -294,8 +295,7 @@ struct MaintenanceRecordDetailView: View {
                     } label: { Label("PDF Raporu", systemImage: "doc.text.fill") }
                     Divider()
                     Button("Kaydı Sil", role: .destructive) {
-                        persistence.deleteMaintenanceRecord(id: localRecord.id)
-                        dismiss()
+                        showDeleteConfirm = true
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle").foregroundStyle(amber)
@@ -327,6 +327,19 @@ struct MaintenanceRecordDetailView: View {
                 localRecord = fresh
             }
         }
+        .confirmationDialog(
+            "Bu bakım kaydını kalıcı olarak sil",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Sil — Tüm Geçmiş Silinecek", role: .destructive) {
+                persistence.deleteMaintenanceRecord(id: localRecord.id)
+                dismiss()
+            }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text("Tüm ölçümler, ziyaretler ve fotoğraf kayıtları bu panoya bağlı. Bu işlem geri alınamaz.")
+        }
     }
 
     // MARK: Info Card
@@ -349,6 +362,8 @@ struct MaintenanceRecordDetailView: View {
             infoRow("Toplam kVAr",      String(format: "%.0f kVAr", localRecord.totalKVAr))
             infoRow("Sonraki Kontrol",  localRecord.nextCheckDate.formatted(.dateTime.day().month().year()),
                     color: localRecord.isOverdue ? .red : localRecord.isDueSoon ? .yellow : nil)
+            infoRow("Tahmini Yenileme", localRecord.estimatedReplacementDate.formatted(.dateTime.day().month().year()),
+                    color: localRecord.estimatedReplacementDate < Date() ? .red : nil)
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 0.10, green: 0.10, blue: 0.13))
@@ -411,18 +426,21 @@ struct MaintenanceRecordDetailView: View {
     // MARK: Trend Chart
 
     private var trendChartCard: some View {
-        let data = localRecord.readings.sorted { $0.date < $1.date }.suffix(12)
+        let allSorted = Array(localRecord.readings.sorted { $0.date < $1.date })
+        let data      = Array(allSorted.suffix(12))
+        let thdData   = data.filter { $0.thdPercent  != nil }
+        let kvarData  = data.filter { $0.measuredKVAr != nil }
 
         return VStack(spacing: 12) {
+            // cos φ grafiği
             HStack {
                 Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(amber)
                 Text("cos φ Trendi (Son \(data.count) Ölçüm)")
                     .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
             }
-
             Chart {
-                ForEach(Array(data)) { point in
+                ForEach(data) { point in
                     LineMark(x: .value("Tarih", point.date), y: .value("cos φ", point.cosPhi))
                         .foregroundStyle(Color.cyan).lineStyle(StrokeStyle(lineWidth: 2.5))
                     PointMark(x: .value("Tarih", point.date), y: .value("cos φ", point.cosPhi))
@@ -450,6 +468,110 @@ struct MaintenanceRecordDetailView: View {
                     AxisValueLabel().foregroundStyle(Color.gray.opacity(0.6))
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
                         .foregroundStyle(Color.white.opacity(0.08))
+                }
+            }
+
+            // THD grafiği — en az 2 okumada thdPercent doluysa göster
+            if thdData.count >= 2 {
+                Divider().background(amber.opacity(0.2)).padding(.vertical, 2)
+                HStack {
+                    Image(systemName: "waveform.path.ecg").foregroundStyle(Color.orange)
+                    Text("THD Trendi (Son \(thdData.count) Ölçüm)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Spacer()
+                }
+                Chart {
+                    ForEach(thdData) { point in
+                        LineMark(x: .value("Tarih", point.date), y: .value("THD %", point.thdPercent!))
+                            .foregroundStyle(Color.orange.opacity(0.8))
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                        PointMark(x: .value("Tarih", point.date), y: .value("THD %", point.thdPercent!))
+                            .foregroundStyle(
+                                (point.thdPercent ?? 0) > 8 ? Color.red :
+                                (point.thdPercent ?? 0) > 5 ? Color.orange : Color.green
+                            )
+                    }
+                    RuleMark(y: .value("Yüksek Risk", 8))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                        .foregroundStyle(Color.red.opacity(0.55))
+                        .annotation(position: .trailing) {
+                            Text(">8%").font(.system(size: 9, design: .rounded)).foregroundStyle(.red.opacity(0.55))
+                        }
+                    RuleMark(y: .value("Orta Risk", 5))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                        .foregroundStyle(Color.orange.opacity(0.55))
+                        .annotation(position: .trailing) {
+                            Text("5%").font(.system(size: 9, design: .rounded)).foregroundStyle(.orange.opacity(0.55))
+                        }
+                }
+                .frame(height: 120)
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisValueLabel(format: .dateTime.month(.abbreviated))
+                            .foregroundStyle(Color.gray.opacity(0.6))
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
+                            .foregroundStyle(Color.white.opacity(0.08))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { _ in
+                        AxisValueLabel().foregroundStyle(Color.gray.opacity(0.6))
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
+                            .foregroundStyle(Color.white.opacity(0.08))
+                    }
+                }
+            }
+
+            // Kapasite trendi — en az 2 okumada measuredKVAr doluysa göster
+            if kvarData.count >= 2 {
+                Divider().background(amber.opacity(0.2)).padding(.vertical, 2)
+                HStack {
+                    Image(systemName: "bolt.fill").foregroundStyle(Color.cyan)
+                    Text("Kapasite Trendi (Son \(kvarData.count) Ölçüm)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Spacer()
+                }
+                Chart {
+                    ForEach(kvarData) { point in
+                        LineMark(x: .value("Tarih", point.date), y: .value("kVAr", point.measuredKVAr!))
+                            .foregroundStyle(Color.cyan.opacity(0.8))
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                        PointMark(x: .value("Tarih", point.date), y: .value("kVAr", point.measuredKVAr!))
+                            .foregroundStyle(
+                                (point.measuredKVAr ?? localRecord.totalKVAr) < localRecord.totalKVAr * 0.80 ? Color.red :
+                                (point.measuredKVAr ?? localRecord.totalKVAr) < localRecord.totalKVAr * 0.90 ? Color.orange : Color.green
+                            )
+                    }
+                    if localRecord.totalKVAr > 0 {
+                        RuleMark(y: .value("Nominal", localRecord.totalKVAr))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                            .foregroundStyle(Color.cyan.opacity(0.45))
+                            .annotation(position: .trailing) {
+                                Text("Nom.").font(.system(size: 9, design: .rounded)).foregroundStyle(.cyan.opacity(0.45))
+                            }
+                        RuleMark(y: .value("%80 Sınırı", localRecord.totalKVAr * 0.80))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                            .foregroundStyle(Color.red.opacity(0.5))
+                            .annotation(position: .trailing) {
+                                Text("80%").font(.system(size: 9, design: .rounded)).foregroundStyle(.red.opacity(0.5))
+                            }
+                    }
+                }
+                .frame(height: 120)
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisValueLabel(format: .dateTime.month(.abbreviated))
+                            .foregroundStyle(Color.gray.opacity(0.6))
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
+                            .foregroundStyle(Color.white.opacity(0.08))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { _ in
+                        AxisValueLabel().foregroundStyle(Color.gray.opacity(0.6))
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
+                            .foregroundStyle(Color.white.opacity(0.08))
+                    }
                 }
             }
         }
@@ -521,7 +643,7 @@ struct MaintenanceRecordDetailView: View {
             Divider().background(Color.white.opacity(0.1)).frame(height: 56)
             criticalCell(
                 icon: "turkishlirasign.circle.fill",
-                label: "Yıllık Ceza",
+                label: "Son 12 Ölçüm Cezası",
                 value: totalPenalty > 0 ? totalPenalty.currencyFormatted : "0 ₺",
                 color: totalPenalty > 0 ? .red : .green
             )
@@ -650,26 +772,69 @@ struct MaintenanceRecordDetailView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(trendColor.opacity(0.3), lineWidth: 1)))
     }
 
-    // MARK: Kondansatör Sağlık (Task 5)
+    // MARK: Kondansatör Sağlık
 
     private var capacitorHealthCard: some View {
-        let lastVisit = localRecord.visits.sorted { $0.date > $1.date }.first
-        let capItems = lastVisit?.items.filter { $0.title.contains("Kondansatör") || $0.title.contains("Kapasite") } ?? []
-        let hasFailure = capItems.contains { $0.status == .failure }
-        let hasWarning = capItems.contains { $0.status == .warning }
+        // En son measuredKVAr içeren okumayı bul
+        let latestMeasured = sortedReadings.first(where: { $0.measuredKVAr != nil })
+        let lastVisit      = localRecord.visits.sorted { $0.date > $1.date }.first
+
+        // Checklist: kind-based eşleştirme (yeni ziyaretler) + legacy string fallback (eski kayıtlar)
+        let capItems = lastVisit?.items.filter {
+            $0.kind == .capacitorVisual || $0.kind == .capacityMeasurement ||
+            ($0.kind == nil && ($0.title.contains("Kondansatör") || $0.title.contains("Kapasite")))
+        } ?? []
+        let hasChecklistFailure = capItems.contains { $0.status == .failure }
+        let hasChecklistWarning = capItems.contains { $0.status == .warning }
         let recentCos = sortedReadings.prefix(3).reduce(0.0) { $0 + $1.cosPhi } / max(1, Double(min(3, sortedReadings.count)))
 
-        let (health, healthColor, healthDetail): (String, Color, String)
-        if lastVisit == nil {
-            (health, healthColor, healthDetail) = ("Bilinmiyor", .gray, "Bakım ziyareti kaydı yok")
-        } else if hasFailure {
-            (health, healthColor, healthDetail) = ("Kritik", .red, "Son ziyarette arıza tespit edildi")
-        } else if hasWarning {
-            (health, healthColor, healthDetail) = ("Dikkat", .orange, "Son ziyarette dikkat gerektiriyor")
-        } else if recentCos < 0.90 && !sortedReadings.isEmpty {
-            (health, healthColor, healthDetail) = ("Şüpheli", .orange, "Düşük cos φ kondansatör sorunu olabilir")
+        let health:       String
+        let healthColor:  Color
+        let healthDetail: String
+        let healthSource: String
+
+        if let measured = latestMeasured?.measuredKVAr, localRecord.totalKVAr > 0 {
+            let ratio = measured / localRecord.totalKVAr
+            let pct   = String(format: "%.0f", ratio * 100)
+            healthSource = String(format: "Ölçülen: %.0f kVAr / Nominal: %.0f kVAr", measured, localRecord.totalKVAr)
+            if ratio < 0.80 {
+                health      = "Kritik"
+                healthColor = .red
+                healthDetail = "Kapasite nominal değerin %80'inin altında (\(pct)%)"
+            } else if ratio < 0.90 {
+                health      = "İzlenmeli"
+                healthColor = .orange
+                healthDetail = "Kapasite azalmış — kontrol öneriliyor (\(pct)%)"
+            } else {
+                health      = "Sağlıklı"
+                healthColor = .green
+                healthDetail = "Kapasite nominal değer aralığında (\(pct)%)"
+            }
         } else {
-            (health, healthColor, healthDetail) = ("İyi", .green, "Son bakımda sorun tespit edilmedi")
+            // Ölçüm verisi yok — checklist tabanlı tahmin
+            healthSource = ""
+            let suffix = lastVisit != nil ? " (ölçüm girilmedi — tahmin)" : ""
+            if lastVisit == nil {
+                health      = "Bilinmiyor"
+                healthColor = .gray
+                healthDetail = "Bakım ziyareti kaydı yok"
+            } else if hasChecklistFailure {
+                health      = "Kritik"
+                healthColor = .red
+                healthDetail = "Son ziyarette arıza tespit edildi\(suffix)"
+            } else if hasChecklistWarning {
+                health      = "Dikkat"
+                healthColor = .orange
+                healthDetail = "Son ziyarette dikkat gerektiriyor\(suffix)"
+            } else if recentCos < 0.90 && !sortedReadings.isEmpty {
+                health      = "Şüpheli"
+                healthColor = .orange
+                healthDetail = "Düşük cos φ kondansatör sorunu olabilir\(suffix)"
+            } else {
+                health      = "İyi"
+                healthColor = .green
+                healthDetail = "Son bakımda sorun tespit edilmedi\(suffix)"
+            }
         }
 
         return HStack(spacing: 14) {
@@ -679,6 +844,9 @@ struct MaintenanceRecordDetailView: View {
                 Text("Kondansatör Sağlığı").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray.opacity(0.65))
                 Text(health).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(healthColor)
                 Text(healthDetail).font(.system(size: 12, design: .rounded)).foregroundStyle(.gray.opacity(0.7))
+                if !healthSource.isEmpty {
+                    Text(healthSource).font(.system(size: 10, design: .rounded)).foregroundStyle(.gray.opacity(0.5))
+                }
             }
             Spacer()
         }
@@ -694,6 +862,13 @@ struct MaintenanceRecordDetailView: View {
         if let latest = sortedReadings.first {
             if latest.cosPhi < 0.95 { recs.append("cos φ ölçümü ve kompanzasyon ayarı") }
             if latest.isOvercompensated { recs.append("Aşırı kompanzasyon incelemesi") }
+            if let thd = latest.thdPercent {
+                if thd > 8 {
+                    recs.insert(String(format: "Yüksek THD (%%%.0f) — detuned reaktör değerlendirilmeli", thd), at: 0)
+                } else if thd > 5 {
+                    recs.append(String(format: "THD %%%.0f — harmonik izleme önerilir", thd))
+                }
+            }
         }
         if let lastVisit = localRecord.visits.sorted(by: { $0.date > $1.date }).first {
             if lastVisit.failureCount > 0 { recs.append("Önceki arızaların takibi (\(lastVisit.failureCount) arıza)") }
@@ -871,28 +1046,41 @@ struct MaintenanceRecordDetailView: View {
         let cp = reading.cosPhi
         let cpColor: Color = cp >= 0.95 ? .green : cp >= 0.90 ? .orange : .red
 
-        return HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(reading.periodLabel.isEmpty ? reading.date.formatted(.dateTime.month(.wide).year()) : reading.periodLabel)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                Text(reading.date.formatted(.dateTime.day().month(.abbreviated).year()))
-                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+        var fieldParts = [String]()
+        if let kv  = reading.measuredKVAr { fieldParts.append(String(format: "Ölçülen: %.0f kVAr", kv)) }
+        if let thd = reading.thdPercent   { fieldParts.append(String(format: "THD: %.0f%%", thd)) }
+        let fieldBadge = fieldParts.isEmpty ? nil : fieldParts.joined(separator: " · ")
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(reading.periodLabel.isEmpty ? reading.date.formatted(.dateTime.month(.wide).year()) : reading.periodLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                    Text(reading.date.formatted(.dateTime.day().month(.abbreviated).year()))
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(String(format: "cos φ %.3f", cp))
+                        .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(cpColor)
+                    if reading.estimatedPenalty > 0 {
+                        Text("-\(reading.estimatedPenalty.currencyFormatted)")
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
+                    }
+                    if reading.estimatedCapacitivePenalty > 0 {
+                        Text("-\(reading.estimatedCapacitivePenalty.currencyFormatted)")
+                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange)
+                    }
+                    if reading.photoIDs.count > 0 {
+                        Label("\(reading.photoIDs.count)", systemImage: "camera.fill")
+                            .font(.system(size: 10, design: .rounded)).foregroundStyle(.teal)
+                    }
+                }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "cos φ %.3f", cp))
-                    .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(cpColor)
-                if reading.estimatedPenalty > 0 {
-                    Text("-\(reading.estimatedPenalty.currencyFormatted)")
-                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
-                }
-                if reading.estimatedCapacitivePenalty > 0 {
-                    Text("-\(reading.estimatedCapacitivePenalty.currencyFormatted)")
-                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange)
-                }
-                if reading.photoIDs.count > 0 {
-                    Label("\(reading.photoIDs.count)", systemImage: "camera.fill")
-                        .font(.system(size: 10, design: .rounded)).foregroundStyle(.teal)
+            if let badge = fieldBadge {
+                HStack(spacing: 5) {
+                    Image(systemName: "ruler.fill").font(.system(size: 9)).foregroundStyle(.cyan.opacity(0.7))
+                    Text(badge).font(.system(size: 10, design: .rounded)).foregroundStyle(.cyan.opacity(0.7))
                 }
             }
         }
@@ -1216,28 +1404,35 @@ struct MaintenanceRecordFormView: View {
     let record: MaintenanceRecord?
     let onSave: (MaintenanceRecord) -> Void
 
-    @State private var customerName: String    = ""
-    @State private var locationAddress: String = ""
-    @State private var panelBrand: String      = ""
-    @State private var panelModel: String      = ""
-    @State private var installationDate: Date  = Date()
-    @State private var totalKVArStr: String    = "100"
-    @State private var checkPeriodMonths: Int  = 3
+    @State private var customerName: String      = ""
+    @State private var locationAddress: String   = ""
+    @State private var panelBrand: String        = ""
+    @State private var panelModel: String        = ""
+    @State private var installationDate: Date    = Date()
+    @State private var totalKVArStr: String      = "100"
+    @State private var checkPeriodMonths: Int    = 3
+    @State private var expectedLifeYearsVal: Int = 15
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
+
+    private var isKVArInvalid: Bool {
+        !totalKVArStr.isEmpty &&
+        Double(totalKVArStr.replacingOccurrences(of: ",", with: ".")) == nil
+    }
 
     init(record: MaintenanceRecord?, onSave: @escaping (MaintenanceRecord) -> Void) {
         self.record = record
         self.onSave = onSave
         if let r = record {
-            _customerName     = State(initialValue: r.customerName)
-            _locationAddress  = State(initialValue: r.locationAddress)
-            _panelBrand       = State(initialValue: r.panelBrand)
-            _panelModel       = State(initialValue: r.panelModel)
-            _installationDate = State(initialValue: r.installationDate)
-            _totalKVArStr     = State(initialValue: String(format: "%.0f", r.totalKVAr))
-            _checkPeriodMonths = State(initialValue: r.checkPeriodMonths)
+            _customerName        = State(initialValue: r.customerName)
+            _locationAddress     = State(initialValue: r.locationAddress)
+            _panelBrand          = State(initialValue: r.panelBrand)
+            _panelModel          = State(initialValue: r.panelModel)
+            _installationDate    = State(initialValue: r.installationDate)
+            _totalKVArStr        = State(initialValue: String(format: "%.0f", r.totalKVAr))
+            _checkPeriodMonths   = State(initialValue: r.checkPeriodMonths)
+            _expectedLifeYearsVal = State(initialValue: r.expectedLifeYears ?? 15)
         }
     }
 
@@ -1256,12 +1451,36 @@ struct MaintenanceRecordFormView: View {
                         formRow("Model", $panelModel, .default)
                         Divider().background(amber.opacity(0.15))
                         formRow("Toplam kVAr", $totalKVArStr, .numberPad)
+                        if isKVArInvalid {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 10)).foregroundStyle(.red)
+                                Text("Geçersiz değer — kayıt 100 kVAr ile yapılacak")
+                                    .font(.system(size: 10, design: .rounded)).foregroundStyle(.red)
+                            }
+                            .padding(.top, 2)
+                        }
                         Divider().background(amber.opacity(0.15))
                         DatePicker("Kurulum Tarihi", selection: $installationDate, displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .font(.system(size: 14, design: .rounded))
                             .foregroundStyle(.white)
                             .colorScheme(.dark)
+                        Divider().background(amber.opacity(0.15))
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Tahmini Ömür")
+                                    .font(.system(size: 13, design: .rounded)).foregroundStyle(.white.opacity(0.8))
+                                Text("Yenileme: \(Calendar.current.date(byAdding: .year, value: expectedLifeYearsVal, to: installationDate)?.formatted(.dateTime.year()) ?? "—")")
+                                    .font(.system(size: 10, design: .rounded)).foregroundStyle(.gray)
+                            }
+                            Spacer()
+                            Stepper(value: $expectedLifeYearsVal, in: 5...25) {
+                                Text("\(expectedLifeYearsVal) yıl")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
                     formSection("Kontrol Periyodu") {
                         Picker("Periyot", selection: $checkPeriodMonths) {
@@ -1286,13 +1505,14 @@ struct MaintenanceRecordFormView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {
                         var r = record ?? MaintenanceRecord()
-                        r.customerName      = customerName
-                        r.locationAddress   = locationAddress
-                        r.panelBrand        = panelBrand
-                        r.panelModel        = panelModel
-                        r.installationDate  = installationDate
-                        r.totalKVAr         = Double(totalKVArStr) ?? 100
-                        r.checkPeriodMonths = checkPeriodMonths
+                        r.customerName       = customerName
+                        r.locationAddress    = locationAddress
+                        r.panelBrand         = panelBrand
+                        r.panelModel         = panelModel
+                        r.installationDate   = installationDate
+                        r.totalKVAr          = Double(totalKVArStr.replacingOccurrences(of: ",", with: ".")) ?? 100
+                        r.checkPeriodMonths  = checkPeriodMonths
+                        r.expectedLifeYears  = expectedLifeYearsVal
                         onSave(r)
                         dismiss()
                     }

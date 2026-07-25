@@ -19,8 +19,10 @@ struct MaintenanceRecord: Identifiable, Codable {
     var readings: [MaintenanceReading] = []
     var visits: [MaintenanceVisit] = []
     /// Panodaki toplam kademe (kondansatör) sayısı — opsiyonel
+    /// Şu an UI'da kullanılmıyor — gelecekte kademe bazlı arıza takibi için ayrılmış
     var stepCount: Int?          = nil
     /// Arızalı/devre dışı kademe sayısı — opsiyonel
+    /// Şu an UI'da kullanılmıyor — gelecekte kademe bazlı arıza takibi için ayrılmış
     var failedStepCount: Int?    = nil
     /// Tahmini panel ömrü (yıl) — opsiyonel; nil ise 15 yıl varsayılır
     /// Optional yapı eski Codable kayıtlarında KeyNotFound decode hatasını önler

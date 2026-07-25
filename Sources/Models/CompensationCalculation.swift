@@ -231,6 +231,11 @@ struct CompensationResult: Codable {
     /// Kompanzasyon sonrası görünür güç (kVA)
     var newApparentKVA: Double
 
+    // MARK: Uyarılar
+
+    /// Aşırı kurulum uyarısı — kurulan kapasite ihtiyacın %50'sinden fazlasını aşıyorsa dolar
+    var oversizingWarning: String? = nil
+
     // MARK: Uyumluluk Alias'ları
 
     /// Gerekli kondansatör kapasitesi (kVAr) — requiredQcKVAr ile aynı

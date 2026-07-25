@@ -39,7 +39,7 @@ final class DashboardViewModel: ObservableObject {
     /// Yaklaşan geçerlilik tarihi olan teklif sayısı (7 gün içinde)
     @Published var expiringQuoteCount: Int = 0
 
-    /// cos φ < 0.90 olan (ceza riski taşıyan) bakım paneli sayısı
+    /// cos φ < 0.95 olan (TEDAŞ ceza riski taşıyan) bakım paneli sayısı
     @Published var panelsWithCosPhiWarning: Int = 0
 
     // MARK: - Özel Değişkenler

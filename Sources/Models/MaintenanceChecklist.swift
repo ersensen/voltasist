@@ -41,6 +41,24 @@ enum ChecklistItemStatus: String, Codable, CaseIterable {
     }
 }
 
+// MARK: - Kontrol Listesi Madde Türü
+
+/// Standart kontrol listesi maddelerinin kararlı tanımlayıcısı.
+/// Başlık metni değişse dahi bu enum sayesinde madde eşleştirmesi güvenli kalır.
+/// Raw value String ve Codable — eski kayıtlarda kind yoksa nil decode edilir (Optional).
+enum ChecklistItemKind: String, Codable, CaseIterable {
+    case terminalCheck       = "terminal_check"
+    case corrosionCheck      = "corrosion_check"
+    case capacitorVisual     = "capacitor_visual"
+    case contactorTest       = "contactor_test"
+    case regulatorCheck      = "regulator_check"
+    case temperatureCheck    = "temperature_check"
+    case capacityMeasurement = "capacity_measurement"
+    case harmonicMeasurement = "harmonic_measurement"
+    case groundingCheck      = "grounding_check"
+    case ventilationCheck    = "ventilation_check"
+}
+
 // MARK: - Kontrol Listesi Kalemi
 
 struct ChecklistItem: Identifiable, Codable {
@@ -48,6 +66,8 @@ struct ChecklistItem: Identifiable, Codable {
     var title: String
     var status: ChecklistItemStatus   = .unchecked
     var notes: String                 = ""
+    /// Kararlı eşleştirme anahtarı — nil ise eski kayıt veya özel madde
+    var kind: ChecklistItemKind?      = nil
 
     var isChecked: Bool { status != .unchecked }
 }
@@ -73,16 +93,16 @@ struct MaintenanceVisit: Identifiable, Codable {
 
     static var standardItems: [ChecklistItem] {
         [
-            ChecklistItem(title: "Terminal sıkılığı ve vida kontrolleri"),
-            ChecklistItem(title: "Korozyon ve nem kontrolü"),
-            ChecklistItem(title: "Kondansatör görsel incelemesi (şişlik, sızıntı)"),
-            ChecklistItem(title: "Kontaktör çalışma testi"),
-            ChecklistItem(title: "Regülatör ekran ve göstergeler kontrolü"),
-            ChecklistItem(title: "Pano iç sıcaklık ölçümü"),
-            ChecklistItem(title: "Kapasite ölçümü (nominal değerin %80 altı kritik)"),
-            ChecklistItem(title: "Harmonik ölçümü (THD değeri)"),
-            ChecklistItem(title: "Topraklama bağlantısı kontrolü"),
-            ChecklistItem(title: "Havalandırma deliği temizliği"),
+            ChecklistItem(title: "Terminal sıkılığı ve vida kontrolleri",            kind: .terminalCheck),
+            ChecklistItem(title: "Korozyon ve nem kontrolü",                         kind: .corrosionCheck),
+            ChecklistItem(title: "Kondansatör görsel incelemesi (şişlik, sızıntı)",  kind: .capacitorVisual),
+            ChecklistItem(title: "Kontaktör çalışma testi",                          kind: .contactorTest),
+            ChecklistItem(title: "Regülatör ekran ve göstergeler kontrolü",          kind: .regulatorCheck),
+            ChecklistItem(title: "Pano iç sıcaklık ölçümü",                         kind: .temperatureCheck),
+            ChecklistItem(title: "Kapasite ölçümü (nominal değerin %80 altı kritik)", kind: .capacityMeasurement),
+            ChecklistItem(title: "Harmonik ölçümü (THD değeri)",                    kind: .harmonicMeasurement),
+            ChecklistItem(title: "Topraklama bağlantısı kontrolü",                   kind: .groundingCheck),
+            ChecklistItem(title: "Havalandırma deliği temizliği",                    kind: .ventilationCheck),
         ]
     }
 
@@ -91,20 +111,3 @@ struct MaintenanceVisit: Identifiable, Codable {
     }
 }
 
-// MARK: - Legacy (Backward Compat — not persisted)
-
-struct MaintenanceChecklist: Identifiable, Codable {
-    var id: UUID        = UUID()
-    var recordID: UUID
-    var visitID: UUID?
-    var date: Date      = Date()
-    var items: [ChecklistItem]
-
-    var completedCount: Int { items.filter(\.isChecked).count }
-    var totalCount: Int { items.count }
-    var isComplete: Bool { completedCount == totalCount }
-
-    static func standard(for recordID: UUID) -> MaintenanceChecklist {
-        MaintenanceChecklist(recordID: recordID, items: MaintenanceVisit.standardItems)
-    }
-}

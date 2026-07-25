@@ -162,9 +162,10 @@ struct CompensationCalculatorView: View {
     @State private var showNoCompensationAlert: Bool = false
 
     // Hesaplanan
-    @State private var computedCosPhi:      Double = 100.0 / 140.0
-    @State private var computedQcKVAr:      Double = 0.0
-    @State private var computedMonthlySaving: Double = 0.0
+    @State private var computedCosPhi:        Double  = 100.0 / 140.0
+    @State private var computedQcKVAr:        Double  = 0.0
+    @State private var computedMonthlySaving: Double  = 0.0
+    @State private var engineOversizingWarning: String? = nil
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -680,6 +681,24 @@ struct CompensationCalculatorView: View {
                 }
             }
             .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+
+            // Aşırı kurulum uyarısı (yalnızca engine min. kademe nedeniyle oluşuyorsa)
+            if let warning = engineOversizingWarning {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.orange.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+                )
+            }
 
             // Sütun başlıkları
             HStack {
@@ -1524,6 +1543,19 @@ struct CompensationCalculatorView: View {
         let qReactive     = sqrt(max(0, s * s - p * p))
         let penaltyQ      = max(0, qReactive - p * 0.33)
         computedMonthlySaving = penaltyQ * 720 * penaltyRate
+
+        // Aşırı kurulum uyarısı — engine kademeleri üzerinden kontrol
+        if computedQcKVAr > 0 {
+            let eSteps = CompensationEngine.selectCapacitorSteps(totalQcKVAr: computedQcKVAr)
+            let eTotal = eSteps.reduce(0.0) { $0 + $1.totalKVAr }
+            let ratio  = (eTotal - computedQcKVAr) / computedQcKVAr
+            engineOversizingWarning = ratio > 0.5
+                ? String(format: "Kurulan kapasite ihtiyacın %%%.0f üzerinde — minimum standart kademe (2.5 kVAr) küçük yükler için orantısız büyük kalıyor, sabit kondansatörlü özel çözüm değerlendirilebilir.", ratio * 100)
+                : nil
+        } else {
+            engineOversizingWarning = nil
+        }
+
         rebuildEditableSteps()
     }
 

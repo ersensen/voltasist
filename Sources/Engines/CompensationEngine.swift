@@ -102,7 +102,13 @@ struct CompensationEngine {
             }
         }
 
-        return steps.filter { $0.quantity > 0 }
+        // Aynı rating'deki girişleri (greedy + kalan bloğu çakışması) tek CapacitorStep'te birleştir
+        var merged: [Double: Int] = [:]
+        for step in steps where step.quantity > 0 {
+            merged[step.ratingKVAr, default: 0] += step.quantity
+        }
+        return merged.sorted { $0.key > $1.key }
+                     .map { CapacitorStep(ratingKVAr: $0.key, quantity: $0.value) }
     }
 
     // MARK: - 7.3 AKP Parametreleri
@@ -355,6 +361,12 @@ struct CompensationEngine {
         let steps = selectCapacitorSteps(totalQcKVAr: requiredQc)
         let totalInstalledKVAr = steps.reduce(0.0) { $0 + $1.totalKVAr }
 
+        // Aşırı kurulum kontrolü: minimum standart kademe küçük ihtiyaçlar için orantısız büyük olabilir
+        let oversizeRatio = requiredQc > 0 ? (totalInstalledKVAr - requiredQc) / requiredQc : 0.0
+        let oversizingWarning: String? = oversizeRatio > 0.5
+            ? String(format: "Kurulan kapasite ihtiyacın %%%.0f üzerinde — minimum standart kademe (2.5 kVAr) küçük yükler için orantısız büyük kalıyor, sabit kondansatörlü özel çözüm değerlendirilebilir.", oversizeRatio * 100)
+            : nil
+
         // AKP mi, sabit mi?
         let totalStepCount = steps.reduce(0) { $0 + $1.quantity }
         let isAutomatic = totalStepCount > 1
@@ -462,7 +474,8 @@ struct CompensationEngine {
             irrPercent: roi.irr,
             cumulativeSavings: roi.cumulativeSavings,
             achievedCosPhi: achievedCosPhi,
-            newApparentKVA: newApparentKVA
+            newApparentKVA: newApparentKVA,
+            oversizingWarning: oversizingWarning
         )
     }
 }

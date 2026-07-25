@@ -658,19 +658,22 @@ struct CompensationCalculatorView: View {
     }
 
     private func stepMenuLabel(kvar: Double) -> some View {
-        HStack(spacing: 4) {
+        let fillColor: Color   = Color.purple.opacity(0.15)
+        let strokeColor: Color = Color.purple.opacity(0.3)
+        return HStack(spacing: 4) {
             Text(String(format: "%.0f kVAr", kvar))
                 .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(Color.purple)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.15))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.3), lineWidth: 1)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(fillColor)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeColor, lineWidth: 1)))
     }
 
     private func stepRow(index i: Int) -> some View {
-        let amps: Double = contactorAmps(forKVAr: editableSteps[i])
-        let rowOpacity: Double = i % 2 == 0 ? 0.04 : 0.0
+        let amps: Double        = contactorAmps(forKVAr: editableSteps[i])
+        let rowOpacity: Double  = i % 2 == 0 ? 0.04 : 0.0
+        let rowFillColor: Color = Color.purple.opacity(rowOpacity)
         return HStack {
             Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.purple).frame(width: 28)
@@ -696,7 +699,7 @@ struct CompensationCalculatorView: View {
             .buttonStyle(.plain).frame(width: 32)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(rowOpacity)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(rowFillColor))
     }
 
     private var stepTableCard: some View {
@@ -829,7 +832,10 @@ struct CompensationCalculatorView: View {
     }
 
     private func mixedKademeRow(kvar: Double, count: Int) -> some View {
-        HStack(spacing: 12) {
+        let fillColor: Color   = Color.teal.opacity(0.06)
+        let strokeColor: Color = Color.teal.opacity(0.2)
+        let labelColor: Color  = Color.teal.opacity(0.85)
+        return HStack(spacing: 12) {
             Text("\(count) adet").font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(.black).padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Capsule().fill(Color.teal))
@@ -838,11 +844,11 @@ struct CompensationCalculatorView: View {
                 .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.white)
             Spacer()
             Text(String(format: "= %.0f kVAr", kvar * Double(count)))
-                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.teal.opacity(0.85))
+                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(labelColor)
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.06))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.2), lineWidth: 1)))
+        .background(RoundedRectangle(cornerRadius: 10).fill(fillColor)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(strokeColor, lineWidth: 1)))
     }
 
     private var reactorSelectionCard: some View {
@@ -975,6 +981,7 @@ struct CompensationCalculatorView: View {
             ? pkW * (tan(acos(max(0.001, pkCos))) - tan(acos(targetCosPhi))) : 0.0
         let sizing = String(format: "Boyutlandırma: max(%.0f, %.0f) = %.0f kVAr kullanın",
                             pkQc, computedQcKVAr, max(pkQc, computedQcKVAr))
+        let bgFillColor: Color = Color.red.opacity(0.07)
         return VStack(spacing: 10) {
             Text("Pik ölçüm en kötü senaryoyu belirler — AKP boyutlandırması buna göre yapılır.")
                 .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
@@ -995,7 +1002,7 @@ struct CompensationCalculatorView: View {
                 Text(sizing).font(.system(size: 11, design: .rounded)).foregroundStyle(.red.opacity(0.9))
             }
             .padding(10)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.07)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(bgFillColor))
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
@@ -1147,7 +1154,9 @@ struct CompensationCalculatorView: View {
     }
 
     private func reactorTableRow(_ row: (thd: String, reactor: String, hz: String, color: Color), active: Bool) -> some View {
-        HStack {
+        let fillColor: Color   = row.color.opacity(0.1)
+        let strokeColor: Color = row.color.opacity(0.3)
+        return HStack {
             Text(row.thd).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
                 .foregroundStyle(active ? row.color : .gray).frame(width: 55, alignment: .leading)
             Text(row.reactor).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
@@ -1157,8 +1166,8 @@ struct CompensationCalculatorView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(active
-            ? RoundedRectangle(cornerRadius: 8).fill(row.color.opacity(0.1))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(row.color.opacity(0.3), lineWidth: 1))
+            ? RoundedRectangle(cornerRadius: 8).fill(fillColor)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeColor, lineWidth: 1))
             : nil)
     }
 

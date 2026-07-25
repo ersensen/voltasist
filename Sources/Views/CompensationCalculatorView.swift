@@ -143,6 +143,7 @@ struct CompensationCalculatorView: View {
 
     // Kademe
     @State private var stepCountOption: Int = 8
+    @State private var editableSteps: [Double] = []
 
     // Yatırım kalemleri
     @State private var capCostStr:       String = ""
@@ -203,6 +204,7 @@ struct CompensationCalculatorView: View {
             stepCountOption = nv.defaultStepCount
             recalculate()
         }
+        .onChange(of: stepCountOption) { _, _ in rebuildEditableSteps() }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
             Button("Tamam", role: .cancel) {}
         } message: {
@@ -647,40 +649,99 @@ struct CompensationCalculatorView: View {
     }
 
     private var stepTableCard: some View {
-        let rows = stepDesign()
+        let total     = editableStepsTotal
+        let shortfall = computedQcKVAr - total
         return VStack(spacing: 8) {
             HStack {
                 Image(systemName: "list.number").foregroundStyle(Color.purple)
                 Text("Kademe Detayı").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
+                Text("\(editableSteps.count) kd. · \(String(format: "%.0f kVAr", total))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(shortfall > 0.5 ? .orange : .green)
             }
+
+            // Kapasite karşılaştırma
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gerekli: \(String(format: "%.1f kVAr", computedQcKVAr))")
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+                    Text("Kurulacak: \(String(format: "%.1f kVAr", total))")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(shortfall > 0.5 ? .orange : .green)
+                }
+                Spacer()
+                if shortfall > 0.5 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(.orange)
+                        Text("Eksik \(String(format: "%.0f kVAr", shortfall))")
+                            .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.orange)
+                    }
+                }
+            }
+            .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+
+            // Sütun başlıkları
             HStack {
                 Text("Kd.").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 28)
-                Text("kVAr").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .center)
-                Text("Standart").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .center)
+                Text("kVAr (Seç)").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .center)
                 Text("Kontaktör").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .trailing)
+                Spacer().frame(width: 32)
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Color.white.opacity(0.04)).cornerRadius(6)
 
-            ForEach(Array(rows.enumerated()), id: \.0) { i, row in
+            ForEach(editableSteps.indices, id: \.self) { i in
                 HStack {
                     Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.purple).frame(width: 28)
-                    Text(String(format: "%.1f", row.kvarEach))
-                        .font(.system(size: 12, design: .rounded)).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Text(String(format: "%.0f kVAr", row.standard))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(abs(row.standard - row.kvarEach) < 0.1 ? Color.green : Color.orange)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Text(String(format: "%.1f A", row.contactorA))
+
+                    Menu {
+                        ForEach(Self.standardStepValues, id: \.self) { val in
+                            Button(String(format: "%.0f kVAr", val)) { editableSteps[i] = val }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(String(format: "%.0f kVAr", editableSteps[i]))
+                                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(Color.purple)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.15))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.3), lineWidth: 1)))
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Text(String(format: "%.1f A", contactorAmps(forKVAr: editableSteps[i])))
                         .font(.system(size: 12, design: .rounded)).foregroundStyle(Color.cyan)
                         .frame(maxWidth: .infinity, alignment: .trailing)
+
+                    Button {
+                        withAnimation { editableSteps.remove(at: i) }
+                    } label: {
+                        Image(systemName: "minus.circle.fill").font(.system(size: 18)).foregroundStyle(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain).frame(width: 32)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(i % 2 == 0 ? 0.04 : 0.0)))
             }
+
+            Button {
+                withAnimation {
+                    let newVal = nearestStandard(computedQcKVAr / Double(max(1, editableSteps.count + 1)))
+                    editableSteps.append(newVal)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill").foregroundStyle(Color.purple)
+                    Text("Kademe Ekle").font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.purple)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.25), lineWidth: 1)))
+            }
+            .buttonStyle(.plain)
         }
         .padding(16).glassCard(borderColor: Color.purple.opacity(0.25))
     }
@@ -726,6 +787,18 @@ struct CompensationCalculatorView: View {
                 }
                 Text("Karma gruplama tam ihtiyacı karşılar — sıfır fazlalık")
                     .font(.system(size: 11, design: .rounded)).foregroundStyle(Color.teal.opacity(0.8))
+                Button {
+                    withAnimation { editableSteps = mixedRaw }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.teal)
+                        Text("Bu Öneriyi Kullan").font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.teal)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.25), lineWidth: 1)))
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(16).glassCard(borderColor: Color.teal.opacity(0.3))
@@ -772,8 +845,9 @@ struct CompensationCalculatorView: View {
     }
 
     private var physicalSpaceCard: some View {
-        let cabinets = stepCountOption > 12 ? 2 : 1
-        let width    = min(400 + stepCountOption * 200, 2400)
+        let stepCnt  = editableSteps.isEmpty ? stepCountOption : editableSteps.count
+        let cabinets = stepCnt > 12 ? 2 : 1
+        let width    = min(400 + stepCnt * 200, 2400)
         let cc: Color = cabinets > 1 ? .orange : .green
         return VStack(spacing: 12) {
             HStack {
@@ -790,7 +864,7 @@ struct CompensationCalculatorView: View {
             if cabinets > 1 {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(.orange)
-                    Text("\(stepCountOption) kademe → 2 dolap gerekir. Kurulum alanı planlanmalı.")
+                    Text("\(stepCnt) kademe → 2 dolap gerekir. Kurulum alanı planlanmalı.")
                         .font(.system(size: 12, design: .rounded)).foregroundStyle(.orange.opacity(0.9))
                 }
                 .padding(10)
@@ -1240,7 +1314,8 @@ struct CompensationCalculatorView: View {
         let pbStr = pb < 120
             ? String(format: "%.0f ay (%.1f yıl)", pb, pb / 12)
             : "> 10 yıl"
-        let stepStd = nearestStandard(computedQcKVAr / Double(max(1, stepCountOption)))
+        let stepCnt = editableSteps.isEmpty ? stepCountOption : editableSteps.count
+        let stepTotal = editableSteps.isEmpty ? nearestStandard(computedQcKVAr / Double(max(1, stepCountOption))) * Double(stepCountOption) : editableStepsTotal
         return VStack(spacing: 14) {
             HStack {
                 Image(systemName: "person.fill.checkmark").foregroundStyle(.green)
@@ -1251,7 +1326,7 @@ struct CompensationCalculatorView: View {
             VStack(alignment: .leading, spacing: 10) {
                 summaryLine("📌", "Mevcut cos φ: \(String(format: "%.3f", computedCosPhi)) — Hedef: \(String(format: "%.2f", targetCosPhi))")
                 summaryLine("⚡", "Şu an aylık tahmini \(computedMonthlySaving.currencyFormatted) reaktif enerji cezası ödüyorsunuz.")
-                summaryLine("🔧", "Gerekli kondansatör: \(String(format: "%.1f kVAr", computedQcKVAr)) — \(stepCountOption) kademe × \(String(format: "%.0f kVAr", stepStd))")
+                summaryLine("🔧", "Gerekli kondansatör: \(String(format: "%.1f kVAr", computedQcKVAr)) — \(stepCnt) kademe · kurulacak: \(String(format: "%.0f kVAr", stepTotal))")
                 summaryLine("💰", "Tahmini toplam yatırım: \(inv.currencyFormatted)")
                 summaryLine("📅", "Yatırım geri ödeme: \(pbStr)")
                 summaryLine("✅", "Kompanzasyon sonrası TEDAŞ cezası sıfıra iner, trafo kapasitesi artar.")
@@ -1268,7 +1343,8 @@ struct CompensationCalculatorView: View {
     }
 
     private var technicalSummaryCard: some View {
-        let stepStd = nearestStandard(computedQcKVAr / Double(max(1, stepCountOption)))
+        let stepCntT = editableSteps.isEmpty ? stepCountOption : editableSteps.count
+        let stepTotalT = editableSteps.isEmpty ? nearestStandard(computedQcKVAr / Double(max(1, stepCountOption))) * Double(stepCountOption) : editableStepsTotal
         let (rlabel, _, _, _) = reactorInfo
         return VStack(spacing: 10) {
             HStack {
@@ -1277,7 +1353,7 @@ struct CompensationCalculatorView: View {
                 Spacer()
             }
             rptRow("Kompanzasyon Gücü",    String(format: "%.1f kVAr", computedQcKVAr), .orange)
-            rptRow("Kademe",               "\(stepCountOption) × \(String(format: "%.0f kVAr", stepStd))", .purple)
+            rptRow("Kademe",               "\(stepCntT) kd. · \(String(format: "%.0f kVAr", stepTotalT)) kurulu", .purple)
             rptRow("Pano Tipi",            computedQcKVAr > 50 ? "Otomatik (AKP)" : "Sabit Kondansatör", .white)
             rptRow("Reaktör",              rlabel, thdPercent >= 5 ? .orange : .green)
             rptRow("Yöntem",               compMethod.label, .cyan)
@@ -1344,7 +1420,18 @@ struct CompensationCalculatorView: View {
                     electricityTariff: penaltyRate,
                     investmentCostTL: totalInvestment
                 )
-                if let result = try? CompensationEngine.calculate(input: input) {
+                if var result = try? CompensationEngine.calculate(input: input) {
+                    // Kullanıcının elle düzenlediği kademeleri engine sonucuna yansıt
+                    if !editableSteps.isEmpty {
+                        result.selectedSteps     = stepsAsCapacitorSteps()
+                        result.totalInstalledKVAr = editableStepsTotal
+                        result.stepCount         = editableSteps.count
+                        let maxKVAr              = editableSteps.max() ?? result.stepSizeKVAr
+                        result.contactorCurrentA = contactorAmps(forKVAr: maxKVAr)
+                        let cabinets = editableSteps.count > 12 ? 2 : 1
+                        let width    = min(400 + editableSteps.count * 200, 2400)
+                        result.panelSizeDescription = "\(width) mm genişlik · \(cabinets) dolap"
+                    }
                     pendingQuoteItems = QuoteEngine.itemsFromCompensation(result)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     showCustomerPicker = true
@@ -1437,6 +1524,7 @@ struct CompensationCalculatorView: View {
         let qReactive     = sqrt(max(0, s * s - p * p))
         let penaltyQ      = max(0, qReactive - p * 0.33)
         computedMonthlySaving = penaltyQ * 720 * penaltyRate
+        rebuildEditableSteps()
     }
 
     // MARK: - Computed Helpers
@@ -1454,11 +1542,12 @@ struct CompensationCalculatorView: View {
     }
 
     private var defaultCosts: (cap: Double, con: Double, reactor: Double, panel: Double, labor: Double) {
-        let std      = nearestStandard(computedQcKVAr / Double(max(1, stepCountOption)))
-        let cap      = std * Double(stepCountOption) * 150
-        let con      = Double(stepCountOption) * 800
-        let reactor  = thdPercent >= 5 ? std * Double(stepCountOption) * 200 : 0
-        let panel: Double = stepCountOption > 12 ? 18000 : stepCountOption > 6 ? 12000 : 6000
+        let cnt      = editableSteps.isEmpty ? stepCountOption : editableSteps.count
+        let total    = editableSteps.isEmpty ? nearestStandard(computedQcKVAr / Double(max(1, stepCountOption))) * Double(stepCountOption) : editableStepsTotal
+        let cap      = total * 150
+        let con      = Double(cnt) * 800
+        let reactor  = thdPercent >= 5 ? total * 200 : 0
+        let panel: Double = cnt > 12 ? 18000 : cnt > 6 ? 12000 : 6000
         let labor    = (cap + con + reactor + panel) * 0.18
         return (cap, con, reactor, panel, labor)
     }
@@ -1492,16 +1581,27 @@ struct CompensationCalculatorView: View {
         return s.min(by: { abs($0 - kvar) < abs($1 - kvar) }) ?? 25
     }
 
-    private struct StepRow { let kvarEach: Double; let standard: Double; let contactorA: Double }
+    private static let standardStepValues: [Double] = [2.5, 5, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60, 75, 100]
 
-    private func stepDesign() -> [StepRow] {
-        guard computedQcKVAr > 0, stepCountOption > 0 else { return [] }
-        let v       = Double(systemVoltage) ?? 400
-        let perStep = computedQcKVAr / Double(stepCountOption)
-        let std     = nearestStandard(perStep)
-        let ia      = (std * 1000) / (sqrt(3) * v) * 1.43
-        return (0..<stepCountOption).map { _ in StepRow(kvarEach: perStep, standard: std, contactorA: ia) }
+    private var editableStepsTotal: Double { editableSteps.reduce(0, +) }
+
+    private func rebuildEditableSteps() {
+        guard computedQcKVAr > 0, stepCountOption > 0 else { editableSteps = []; return }
+        let std = nearestStandard(computedQcKVAr / Double(stepCountOption))
+        editableSteps = Array(repeating: std, count: stepCountOption)
     }
+
+    private func contactorAmps(forKVAr kvar: Double) -> Double {
+        let v = Double(systemVoltage) ?? 400
+        return (kvar * 1000.0) / (sqrt(3.0) * v) * 1.43
+    }
+
+    private func stepsAsCapacitorSteps() -> [CapacitorStep] {
+        var counts: [Double: Int] = [:]
+        for s in editableSteps { counts[s, default: 0] += 1 }
+        return counts.sorted { $0.key > $1.key }.map { CapacitorStep(ratingKVAr: $0.key, quantity: $0.value) }
+    }
+
 
     private func nearestSteps(total: Double, options: [Double]) -> [Double] {
         var rem = total; var res: [Double] = []

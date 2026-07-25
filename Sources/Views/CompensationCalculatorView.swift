@@ -668,6 +668,36 @@ struct CompensationCalculatorView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.3), lineWidth: 1)))
     }
 
+    private func stepRow(index i: Int) -> some View {
+        let amps = contactorAmps(forKVAr: editableSteps[i])
+        return HStack {
+            Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.purple).frame(width: 28)
+
+            Menu {
+                ForEach(Self.standardStepValues, id: \.self) { val in
+                    Button(String(format: "%.0f kVAr", val)) { editableSteps[i] = val }
+                }
+            } label: {
+                stepMenuLabel(kvar: editableSteps[i])
+            }
+            .frame(maxWidth: .infinity)
+
+            Text(String(format: "%.1f A", amps))
+                .font(.system(size: 12, design: .rounded)).foregroundStyle(Color.cyan)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            Button {
+                withAnimation { editableSteps.remove(at: i) }
+            } label: {
+                Image(systemName: "minus.circle.fill").font(.system(size: 18)).foregroundStyle(.red.opacity(0.8))
+            }
+            .buttonStyle(.plain).frame(width: 32)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(i % 2 == 0 ? 0.04 : 0.0)))
+    }
+
     private var stepTableCard: some View {
         let total     = editableStepsTotal
         let shortfall = computedQcKVAr - total
@@ -730,32 +760,7 @@ struct CompensationCalculatorView: View {
             .background(Color.white.opacity(0.04)).cornerRadius(6)
 
             ForEach(editableSteps.indices, id: \.self) { i in
-                HStack {
-                    Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.purple).frame(width: 28)
-
-                    Menu {
-                        ForEach(Self.standardStepValues, id: \.self) { val in
-                            Button(String(format: "%.0f kVAr", val)) { editableSteps[i] = val }
-                        }
-                    } label: {
-                        stepMenuLabel(kvar: editableSteps[i])
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    Text(String(format: "%.1f A", contactorAmps(forKVAr: editableSteps[i])))
-                        .font(.system(size: 12, design: .rounded)).foregroundStyle(Color.cyan)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-
-                    Button {
-                        withAnimation { editableSteps.remove(at: i) }
-                    } label: {
-                        Image(systemName: "minus.circle.fill").font(.system(size: 18)).foregroundStyle(.red.opacity(0.8))
-                    }
-                    .buttonStyle(.plain).frame(width: 32)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(i % 2 == 0 ? 0.04 : 0.0)))
+                stepRow(index: i)
             }
 
             Button {
@@ -801,20 +806,7 @@ struct CompensationCalculatorView: View {
                 Text("Kompanzasyon gerekmez.").font(.system(size: 13, design: .rounded)).foregroundStyle(.gray)
             } else {
                 ForEach(grouped, id: \.key) { pair in
-                    HStack(spacing: 12) {
-                        Text("\(pair.value) adet").font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(.black).padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(Capsule().fill(Color.teal))
-                        Text("×").font(.system(size: 13)).foregroundStyle(.gray.opacity(0.5))
-                        Text(String(format: "%.0f kVAr", pair.key))
-                            .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                        Spacer()
-                        Text(String(format: "= %.0f kVAr", pair.key * Double(pair.value)))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.teal.opacity(0.85))
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.2), lineWidth: 1)))
+                    mixedKademeRow(kvar: pair.key, count: pair.value)
                 }
                 Text("Karma gruplama tam ihtiyacı karşılar — sıfır fazlalık")
                     .font(.system(size: 11, design: .rounded)).foregroundStyle(Color.teal.opacity(0.8))
@@ -833,6 +825,23 @@ struct CompensationCalculatorView: View {
             }
         }
         .padding(16).glassCard(borderColor: Color.teal.opacity(0.3))
+    }
+
+    private func mixedKademeRow(kvar: Double, count: Int) -> some View {
+        HStack(spacing: 12) {
+            Text("\(count) adet").font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.black).padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Capsule().fill(Color.teal))
+            Text("×").font(.system(size: 13)).foregroundStyle(.gray.opacity(0.5))
+            Text(String(format: "%.0f kVAr", kvar))
+                .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+            Spacer()
+            Text(String(format: "= %.0f kVAr", kvar * Double(count)))
+                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(Color.teal.opacity(0.85))
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.06))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(0.2), lineWidth: 1)))
     }
 
     private var reactorSelectionCard: some View {
@@ -957,6 +966,39 @@ struct CompensationCalculatorView: View {
         }
     }
 
+    private var peakModeContent: some View {
+        let pkW   = Double(peakActivePowerKW) ?? 0
+        let pkVA  = max(1, Double(peakApparentKVA) ?? 1)
+        let pkCos = pkW / pkVA
+        let pkQc  = pkCos < targetCosPhi && pkW > 0
+            ? pkW * (tan(acos(max(0.001, pkCos))) - tan(acos(targetCosPhi))) : 0.0
+        let sizing = String(format: "Boyutlandırma: max(%.0f, %.0f) = %.0f kVAr kullanın",
+                            pkQc, computedQcKVAr, max(pkQc, computedQcKVAr))
+        return VStack(spacing: 10) {
+            Text("Pik ölçüm en kötü senaryoyu belirler — AKP boyutlandırması buna göre yapılır.")
+                .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
+            HStack {
+                Text("PIK (Tam Yük)").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                Spacer()
+            }
+            inputFieldRow(label: "Aktif Güç (kW)",    binding: $peakActivePowerKW, keyboard: .numberPad)
+            inputFieldRow(label: "Görünür Güç (kVA)", binding: $peakApparentKVA,   keyboard: .numberPad)
+            Divider().background(Color.white.opacity(0.1))
+            HStack(spacing: 0) {
+                miniMetric("Pik cos φ", String(format: "%.3f", pkCos), pkCos >= 0.95 ? .green : .red)
+                miniMetric("Pik Qc",    String(format: "%.0f kVAr", pkQc), .orange)
+                miniMetric("Ort. Qc",   String(format: "%.0f kVAr", computedQcKVAr), amber)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 12)).foregroundStyle(.red)
+                Text(sizing).font(.system(size: 11, design: .rounded)).foregroundStyle(.red.opacity(0.9))
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.07)))
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
     private var peakAverageCard: some View {
         VStack(spacing: 14) {
             HStack {
@@ -966,36 +1008,7 @@ struct CompensationCalculatorView: View {
                 Toggle("", isOn: $usePeakMode).tint(Color.orange).labelsHidden()
             }
             if usePeakMode {
-                VStack(spacing: 10) {
-                    Text("Pik ölçüm en kötü senaryoyu belirler — AKP boyutlandırması buna göre yapılır.")
-                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
-                    HStack {
-                        Text("PIK (Tam Yük)").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.red)
-                        Spacer()
-                    }
-                    inputFieldRow(label: "Aktif Güç (kW)",    binding: $peakActivePowerKW, keyboard: .numberPad)
-                    inputFieldRow(label: "Görünür Güç (kVA)", binding: $peakApparentKVA,   keyboard: .numberPad)
-                    Divider().background(Color.white.opacity(0.1))
-                    let pkW  = Double(peakActivePowerKW) ?? 0
-                    let pkVA = max(1, Double(peakApparentKVA) ?? 1)
-                    let pkCos = pkW / pkVA
-                    let pkQc  = pkCos < targetCosPhi && pkW > 0
-                        ? pkW * (tan(acos(max(0.001, pkCos))) - tan(acos(targetCosPhi))) : 0.0
-                    HStack(spacing: 0) {
-                        miniMetric("Pik cos φ", String(format: "%.3f", pkCos), pkCos >= 0.95 ? .green : .red)
-                        miniMetric("Pik Qc",    String(format: "%.0f kVAr", pkQc), .orange)
-                        miniMetric("Ort. Qc",   String(format: "%.0f kVAr", computedQcKVAr), amber)
-                    }
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 12)).foregroundStyle(.red)
-                        Text(String(format: "Boyutlandırma: max(%.0f, %.0f) = %.0f kVAr kullanın",
-                                    pkQc, computedQcKVAr, max(pkQc, computedQcKVAr)))
-                            .font(.system(size: 11, design: .rounded)).foregroundStyle(.red.opacity(0.9))
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.07)))
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                peakModeContent
             } else {
                 Text("Etkinleştirin: Pik ve ortalama yük ayrı ölçülerek en kötü durum AKP boyutu belirlenir.")
                     .font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)

@@ -172,7 +172,7 @@ struct CompensationCalculatorView: View {
 
     // MARK: Body
 
-    var body: some View {
+    private var bodyBase: some View {
         VStack(spacing: 0) {
             compTabSelector
             ScrollView(showsIndicators: false) {
@@ -194,31 +194,39 @@ struct CompensationCalculatorView: View {
         .onChange(of: systemVoltage)    { _, _ in recalculate() }
         .onChange(of: thdPercent)       { _, _ in recalculate() }
         .onChange(of: transformerKVA)   { _, _ in recalculate() }
-        .onChange(of: inputMode)        { _, _ in recalculate() }
-        .onChange(of: monthlyKWh)       { _, _ in recalculate() }
-        .onChange(of: monthlyKVArhInd)  { _, _ in recalculate() }
-        .onChange(of: monthlyKVArhCap)  { _, _ in recalculate() }
-        .onChange(of: useDirectCosPhi)  { _, _ in recalculate() }
-        .onChange(of: directCosPhiStr)  { _, _ in recalculate() }
-        .onChange(of: facilityType) { _, nv in
-            compMethod      = nv.defaultMethod
-            stepCountOption = nv.defaultStepCount
-            recalculate()
-        }
-        .onChange(of: stepCountOption) { _, _ in rebuildEditableSteps() }
-        .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
-            Button("Tamam", role: .cancel) {}
-        } message: {
-            Text("Müşteri teklifine eklendi.")
-        }
-        .sheet(isPresented: $showCustomerPicker) {
-            CustomerPickerView { customer in
-                persistence.addItemsToQuote(pendingQuoteItems, forCustomer: customer)
-                showCustomerPicker = false
-                showQuoteAdded = true
+    }
+
+    private var bodyWithInputChanges: some View {
+        bodyBase
+            .onChange(of: inputMode)        { _, _ in recalculate() }
+            .onChange(of: monthlyKWh)       { _, _ in recalculate() }
+            .onChange(of: monthlyKVArhInd)  { _, _ in recalculate() }
+            .onChange(of: monthlyKVArhCap)  { _, _ in recalculate() }
+            .onChange(of: useDirectCosPhi)  { _, _ in recalculate() }
+            .onChange(of: directCosPhiStr)  { _, _ in recalculate() }
+    }
+
+    var body: some View {
+        bodyWithInputChanges
+            .onChange(of: facilityType) { _, nv in
+                compMethod      = nv.defaultMethod
+                stepCountOption = nv.defaultStepCount
+                recalculate()
             }
-            .environmentObject(persistence)
-        }
+            .onChange(of: stepCountOption) { _, _ in rebuildEditableSteps() }
+            .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
+                Button("Tamam", role: .cancel) {}
+            } message: {
+                Text("Müşteri teklifine eklendi.")
+            }
+            .sheet(isPresented: $showCustomerPicker) {
+                CustomerPickerView { customer in
+                    persistence.addItemsToQuote(pendingQuoteItems, forCustomer: customer)
+                    showCustomerPicker = false
+                    showQuoteAdded = true
+                }
+                .environmentObject(persistence)
+            }
     }
 
     // MARK: - Sekme Seçici
@@ -649,6 +657,17 @@ struct CompensationCalculatorView: View {
         .padding(16).glassCard(borderColor: Color.purple.opacity(0.3))
     }
 
+    private func stepMenuLabel(kvar: Double) -> some View {
+        HStack(spacing: 4) {
+            Text(String(format: "%.0f kVAr", kvar))
+                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(Color.purple)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.15))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.3), lineWidth: 1)))
+    }
+
     private var stepTableCard: some View {
         let total     = editableStepsTotal
         let shortfall = computedQcKVAr - total
@@ -720,14 +739,7 @@ struct CompensationCalculatorView: View {
                             Button(String(format: "%.0f kVAr", val)) { editableSteps[i] = val }
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Text(String(format: "%.0f kVAr", editableSteps[i]))
-                                .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(Color.purple)
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.15))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.3), lineWidth: 1)))
+                        stepMenuLabel(kvar: editableSteps[i])
                     }
                     .frame(maxWidth: .infinity)
 
@@ -1105,30 +1117,35 @@ struct CompensationCalculatorView: View {
             .padding(.horizontal, 10).padding(.vertical, 6).background(Color.white.opacity(0.04)).cornerRadius(6)
 
             ForEach(Array(rows.enumerated()), id: \.0) { i, row in
-                let active: Bool = {
-                    switch i {
-                    case 0: return thdPercent < 5
-                    case 1: return thdPercent >= 5  && thdPercent < 8
-                    case 2: return thdPercent >= 8  && thdPercent < 20
-                    default: return thdPercent >= 20
-                    }
-                }()
-                HStack {
-                    Text(row.thd).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
-                        .foregroundStyle(active ? row.color : .gray).frame(width: 55, alignment: .leading)
-                    Text(row.reactor).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
-                        .foregroundStyle(active ? .white : .gray.opacity(0.6)).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(row.hz).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
-                        .foregroundStyle(active ? row.color : .gray.opacity(0.6)).frame(width: 75, alignment: .trailing)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 8)
-                .background(active
-                    ? RoundedRectangle(cornerRadius: 8).fill(row.color.opacity(0.1))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(row.color.opacity(0.3), lineWidth: 1))
-                    : nil)
+                reactorTableRow(row, active: reactorRowActive(index: i))
             }
         }
         .padding(16).glassCard(borderColor: amber.opacity(0.25))
+    }
+
+    private func reactorRowActive(index: Int) -> Bool {
+        switch index {
+        case 0: return thdPercent < 5
+        case 1: return thdPercent >= 5  && thdPercent < 8
+        case 2: return thdPercent >= 8  && thdPercent < 20
+        default: return thdPercent >= 20
+        }
+    }
+
+    private func reactorTableRow(_ row: (thd: String, reactor: String, hz: String, color: Color), active: Bool) -> some View {
+        HStack {
+            Text(row.thd).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
+                .foregroundStyle(active ? row.color : .gray).frame(width: 55, alignment: .leading)
+            Text(row.reactor).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
+                .foregroundStyle(active ? .white : .gray.opacity(0.6)).frame(maxWidth: .infinity, alignment: .leading)
+            Text(row.hz).font(.system(size: 11, weight: active ? .bold : .regular, design: .rounded))
+                .foregroundStyle(active ? row.color : .gray.opacity(0.6)).frame(width: 75, alignment: .trailing)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(active
+            ? RoundedRectangle(cornerRadius: 8).fill(row.color.opacity(0.1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(row.color.opacity(0.3), lineWidth: 1))
+            : nil)
     }
 
     private func harmonicInfoCard(icon: String, color: Color, title: String, body: String) -> some View {

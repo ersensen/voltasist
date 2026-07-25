@@ -670,6 +670,11 @@ struct CompensationCalculatorView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeColor, lineWidth: 1)))
     }
 
+    private func removeStep(at index: Int) {
+        guard editableSteps.indices.contains(index) else { return }
+        editableSteps.remove(at: index)
+    }
+
     private func stepRow(index i: Int) -> some View {
         let amps: Double        = contactorAmps(forKVAr: editableSteps[i])
         let rowOpacity: Double  = i % 2 == 0 ? 0.04 : 0.0
@@ -692,7 +697,7 @@ struct CompensationCalculatorView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
             Button {
-                withAnimation { editableSteps.remove(at: i) }
+                withAnimation { removeStep(at: i) }
             } label: {
                 Image(systemName: "minus.circle.fill").font(.system(size: 18)).foregroundStyle(.red.opacity(0.8))
             }

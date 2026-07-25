@@ -25,7 +25,10 @@ struct CableEngine {
     ]
 
     /// Her standart kesite karşılık gelen akım taşıma kapasitesi (A)
-    /// Sıva üstü (B2 montaj yöntemi), tek nükleus NYM, 30°C ortam — IEC 60364-5-52 Tablo B.52.4
+    /// Referans: Yüzey / açık boru (B2 yöntemi), tek damar NYM, PVC, bakır, 30°C — IEC 60364-5-52 Tablo B.52.4
+    /// Diğer montaj yöntemleri bu tablodan InstallationType.derating katsayısıyla türetilir:
+    ///   surface (B2): 1.00 (bu tablo değerleri), inConduit (A2): 0.80, cableTray (E): 0.95,
+    ///   inWall (A1 — ısı yalıtımlı duvar içi): 0.70 (IEC A1/B2 oranı ≈ 0.74 — muhafazakâr)
     static let currentCapacityTable: [Double: Double] = [
         1.5:  15.5,
         2.5:  21.0,
@@ -45,7 +48,8 @@ struct CableEngine {
     ]
 
     /// 3 aktif iletken (üç fazlı) için akım taşıma kapasitesi (A)
-    /// B2 montaj yöntemi, NYM çok damarlı, PVC, bakır, 30°C — IEC 60364-5-52 Tablo A.52-4
+    /// Referans: Yüzey / açık boru (B2 yöntemi), çok damarlı NYM, PVC, bakır, 30°C — IEC 60364-5-52 Tablo A.52-4
+    /// Derating zinciri: installationType.derating × groupingFactor × temperatureCorrectionFactor
     static let currentCapacityTable3P: [Double: Double] = [
         1.5:   13.0,
         2.5:   17.5,
@@ -85,8 +89,16 @@ struct CableEngine {
         }
 
         // --- 2. Termal Kesit (Akım Kapasitesi) ---
-        // Derating katsayısı ve gruplama katsayısı (Cg) uygulanmış gerekli kapasite
-        let deratingFactor = input.installationType.derating * CableEngine.groupingFactor(cableCount: input.groupCount)
+        // Derating: montaj tipi × gruplama (Cg) × sıcaklık düzeltme (Ct)
+        // insulationType=PVC: kapasite tabloları PVC kablo referanslıdır (70°C maks. iletken sıcaklığı)
+        // underground=false: mevcut montaj tiplerinin hiçbiri toprak altı değil; XLPE/toprak altı
+        //   desteği için CableCalculationInput'a insulationType/isUnderground alanı eklenmesi gerekir
+        let tempFactor = CableEngine.temperatureCorrectionFactor(
+            ambientTemp: input.ambientTemperature,
+            insulationType: "PVC",
+            underground: false
+        )
+        let deratingFactor = input.installationType.derating * CableEngine.groupingFactor(cableCount: input.groupCount) * tempFactor
         let requiredCapacity = current / deratingFactor
 
         // Faz sayısına göre IEC 60364-5-52 Tablo A.52-4 sütunu seç
@@ -158,7 +170,14 @@ struct CableEngine {
             warning = warning != nil ? "\(warning!) \(aluminumWarning)" : aluminumWarning
         }
 
-        if cableCapacity < current * 1.0 {
+        // Maksimum tablo kapasitesi (240 mm², derating uygulanmış)
+        let maxTableCapacity = (capacityTable[240.0] ?? 0.0) * deratingFactor
+        if manualSection == nil && current > maxTableCapacity {
+            // Yük akımı standart tablo üst sınırını aşıyor — otomatik seçimde tek kablo yeterli değil
+            let parallelWarning = "⚠️ Yük akımı (\(String(format: "%.0f", current)) A) tek kablo için maksimum kapasiteyi (\(String(format: "%.0f", maxTableCapacity)) A) aşıyor — paralel kablo grubu veya bara sistemi gereklidir."
+            warning = warning != nil ? "\(warning!) \(parallelWarning)" : parallelWarning
+        } else if cableCapacity < current {
+            // Manuel seçim yeterli değil
             let overloadWarning = "🔥 Seçilen kesit akım kapasitesi yetersiz — bir üst kesiti tercih edin."
             warning = warning != nil ? "\(warning!) \(overloadWarning)" : overloadWarning
         }

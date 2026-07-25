@@ -109,7 +109,6 @@ struct SolarEngine {
             // Şarj akımı: I = kWp × 1000 / sistem gerilimi (C/10 önerilir)
             chargeCurrentA = (installedKWp * 1000.0) / Double(input.systemVoltage)
 
-            // Kullanılmayan ama derleme için tutulan değer
             _ = batteryVoltage
         }
 
@@ -181,10 +180,27 @@ struct SolarEngine {
             npc += (yearBenefit - maintenanceCost) / pow(1.0 + discountRate, Double(year + 1))
         }
 
-        // --- 10. İnverter Boyutu ---
-        // DC/AC oranı 1.2 — IEC 62109 standart oversizing
-        let inverterKW = installedKWp / 1.2
-        let dcAcRatio  = installedKWp / max(inverterKW, 0.001)
+        // --- 10. C-Rate Uyarısı (Off-Grid / Hybrid) ---
+        // C-rate = şarj akımı / batarya kapasitesi (Ah)
+        // Kurşun-asit: maks C/5 (0.2C), LiFePO4: maks 1.0C
+        let chargeCurrentWarning: String?
+        if batteryCapacityAh > 0 && chargeCurrentA > 0 {
+            let cRate = chargeCurrentA / batteryCapacityAh
+            if cRate > 1.0 {
+                chargeCurrentWarning = "🔴 Şarj akımı (\(String(format: "%.0f", chargeCurrentA)) A) batarya kapasitesine (\(String(format: "%.0f", batteryCapacityAh)) Ah) göre çok yüksek (C-rate: \(String(format: "%.2f", cRate))C) — şarj kontrolör sınırı ve batarya tipi kontrol edilmeli."
+            } else if cRate > 0.5 {
+                chargeCurrentWarning = "⚠️ Yüksek C-rate: \(String(format: "%.2f", cRate))C — kurşun-asit bataryalar için maks C/5 (0.2C) önerilir; LiFePO4 için kabul edilebilir."
+            } else {
+                chargeCurrentWarning = nil
+            }
+        } else {
+            chargeCurrentWarning = nil
+        }
+
+        // --- 11. İnverter Boyutu ---
+        // DC/AC oranı sabit 1.2 — IEC 62109 standart oversizing varsayımı (tasarım sabiti)
+        let dcAcRatio: Double = 1.2
+        let inverterKW = installedKWp / dcAcRatio
 
         return SolarCalculationResult(
             requiredCapacityKWp: installedKWp,
@@ -196,6 +212,7 @@ struct SolarEngine {
             batteryCapacityAh: batteryCapacityAh,
             batteryCount: batteryCount,
             chargeCurrentA: chargeCurrentA,
+            chargeCurrentWarning: chargeCurrentWarning,
             totalInvestmentTL: totalInvestmentTL,
             annualSavingTL: annualSavingTL,
             annualGridIncomeTL: annualGridIncomeTL,

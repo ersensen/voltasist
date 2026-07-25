@@ -118,7 +118,7 @@ struct CompensationInput: Codable {
         return activePowerKW > 0
             && apparentPowerKVA >= activePowerKW
             && measuredCosPhi > 0 && measuredCosPhi <= 1.0
-            && targetCosPhi > measuredCosPhi && targetCosPhi <= 1.0
+            && targetCosPhi >= measuredCosPhi && targetCosPhi <= 1.0
             && systemVoltageV > 0
             && totalHarmonicDistortion >= 0 && totalHarmonicDistortion <= 50
             && electricityTariff > 0

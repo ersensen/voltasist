@@ -113,10 +113,10 @@ final class CompensationEngineTests: XCTestCase {
         let result = try CompensationEngine.calculate(input: input)
 
         // Then — Seçilen basamakların toplam kapasitesi ihtiyacı karşılamalı
-        let selectedTotal = result.capacitorSteps.reduce(0.0) { $0 + $1.capacityKVAr }
+        let selectedTotal = result.selectedSteps.reduce(0.0) { $0 + $1.totalKVAr }
         XCTAssertGreaterThanOrEqual(selectedTotal, result.requiredCapacityKVAr,
             "Seçilen kondansatör basamakları toplam ihtiyacı karşılamalıdır.")
-        XCTAssertFalse(result.capacitorSteps.isEmpty,
+        XCTAssertFalse(result.selectedSteps.isEmpty,
             "Kondansatör basamak listesi boş olmamalıdır.")
     }
 
@@ -142,7 +142,7 @@ final class CompensationEngineTests: XCTestCase {
         let result = try CompensationEngine.calculate(input: input)
 
         // Then
-        XCTAssertEqual(result.harmonicRisk, .high,
+        XCTAssertEqual(result.harmonicRiskLevel, .high,
             "THD=%12 için harmonik risk seviyesi .high olmalıdır.")
         XCTAssertTrue(result.reactorRequired,
             "THD=%12 için detuned reaktör zorunlu olmalıdır.")
@@ -206,9 +206,9 @@ final class CompensationEngineTests: XCTestCase {
             "Geri ödeme süresi 60 aydan küçük olmalıdır.")
 
         // Eğer aylık tasarruf tam 3200 TL ise → 50000/3200 = 15.625 ay
-        if abs(result.monthlySavingsTL - 3200.0) < 500.0 {
+        if abs(result.totalMonthlySavingTL - 3200.0) < 500.0 {
             XCTAssertEqual(result.paybackMonths,
-                           50_000.0 / result.monthlySavingsTL,
+                           50_000.0 / result.totalMonthlySavingTL,
                            accuracy: 1.0,
                 "Geri ödeme = yatırım / aylık tasarruf formülüyle ±1 ay örtüşmelidir.")
         }
@@ -236,9 +236,9 @@ final class CompensationEngineTests: XCTestCase {
         let result = try CompensationEngine.calculate(input: input)
 
         // Then
-        XCTAssertTrue(result.tedasPenaltyRisk,
-            "cosφ=0.82 için TEDAŞ ceza riski bayrağı aktif olmalıdır.")
-        XCTAssertGreaterThan(result.annualPenaltyEstimateTL, 0.0,
+        XCTAssertGreaterThan(result.monthlyPenaltyTL, 0.0,
+            "cosφ=0.82 için aylık TEDAŞ ceza tahmini pozitif olmalıdır.")
+        XCTAssertGreaterThan(result.yearlyPenaltyTL, 0.0,
             "Tahmini yıllık ceza tutarı pozitif olmalıdır.")
     }
 }

@@ -18,6 +18,17 @@ struct MaintenanceRecord: Identifiable, Codable {
     var checkPeriodMonths: Int = 3
     var readings: [MaintenanceReading] = []
     var visits: [MaintenanceVisit] = []
+    /// Panodaki toplam kademe (kondansatör) sayısı — opsiyonel
+    var stepCount: Int?          = nil
+    /// Arızalı/devre dışı kademe sayısı — opsiyonel
+    var failedStepCount: Int?    = nil
+    /// Tahmini panel ömrü (yıl) — varsayılan 15
+    var expectedLifeYears: Int   = 15
+
+    /// Tahmini kondansatör yenileme tarihi (kurulum tarihi + expectedLifeYears)
+    var estimatedReplacementDate: Date {
+        Calendar.current.date(byAdding: .year, value: expectedLifeYears, to: installationDate) ?? installationDate
+    }
 
     var nextCheckDate: Date {
         let base: Date
@@ -66,6 +77,10 @@ struct MaintenanceReading: Identifiable, Codable {
     var tariff: Double         = 0.40
     var notes: String          = ""
     var photoIDs: [UUID]       = []
+    /// Sahada ölçülen anlık kondansatör kapasitesi (kVAr) — opsiyonel
+    var measuredKVAr: Double?  = nil
+    /// Harmonik toplam bozulma oranı (%) — sahada ölçülen — opsiyonel
+    var thdPercent: Double?    = nil
 
     // cos φ = kWh / √(kWh² + (endüktif − kapasitif)²)
     var cosPhi: Double {

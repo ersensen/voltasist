@@ -41,14 +41,15 @@ enum InstallationType: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Montaj tipi derating (düşürme) katsayısı
-    /// IEC 60364-5-52 Tablo B.52.3 referanslı
+    /// Montaj tipi derating katsayısı — B2 (yüzey/açık boru) baz tablosundan sapma oranı
+    /// Referans (surface/B2) = 1.00; diğerleri A1/A2/E yöntemlerinin B2'ye oranı
+    /// IEC 60364-5-52 Tablo A.52-4 yöntem karşılaştırmasından türetilmiştir
     var derating: Double {
         switch self {
-        case .inWall:    return 0.70   // Isı birikimi nedeniyle %30 düşürme
-        case .surface:   return 1.00   // Referans değer
-        case .inConduit: return 0.80   // Açık boru — ılımlı havalandırma
-        case .cableTray: return 0.95   // Kablo taşıyıcı — iyi havalandırma
+        case .inWall:    return 0.70   // A1 (ısı yalıtımlı duvar içi boru) — IEC A1/B2 ≈ 0.74; muhafazakâr
+        case .surface:   return 1.00   // B2 referans değer (tablo bu yönteme göre hazırlanmıştır)
+        case .inConduit: return 0.80   // A2 (açık yüzey boru içi) — IEC A2/B2 ≈ 0.82; muhafazakâr
+        case .cableTray: return 0.95   // E (kablo taşıyıcı, serbest hava) — B2'den yüksek kapasite; 0.95 muhafazakâr
         }
     }
 
@@ -94,6 +95,9 @@ struct CableCalculationInput: Codable {
     /// Demet devre sayısı (Cg) — varsayılan 1
     var groupCount: Int
 
+    /// Ortam sıcaklığı (°C) — sıcaklık düzeltme katsayısı hesabı için, varsayılan 30°C
+    var ambientTemperature: Double
+
     // MARK: Varsayılan Değerler
 
     init(
@@ -105,7 +109,8 @@ struct CableCalculationInput: Codable {
         installationType: InstallationType = .inWall,
         cosPhi: Double = 0.90,
         targetVoltageDrop: Double = 3.0,
-        groupCount: Int = 1
+        groupCount: Int = 1,
+        ambientTemperature: Double = 30.0
     ) {
         self.powerKW = powerKW
         self.voltageV = voltageV
@@ -116,6 +121,7 @@ struct CableCalculationInput: Codable {
         self.cosPhi = cosPhi
         self.targetVoltageDrop = targetVoltageDrop
         self.groupCount = groupCount
+        self.ambientTemperature = ambientTemperature
     }
 
     /// Güç faktörünün geçerliliğini kontrol et

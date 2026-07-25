@@ -162,13 +162,15 @@ struct CompensationEngine {
             risk = .low
             reactorFactor = 0.0
         } else if thd < 8.0 {
-            // Orta risk — %5.67 detuned reaktör önerilir (250 Hz koruma)
+            // Orta risk — %5.67 detuned reaktör önerilir
+            // Detuning: p = (50/210)² ≈ 0.0567 → rezonans frekansı 210 Hz (5. harmonik altı)
             risk = .medium
-            reactorFactor = 0.0567  // p = (50/250)² ≈ 0.04 → pratik: 5.67%
+            reactorFactor = 0.0567
         } else if thd < 20.0 {
-            // Yüksek harmonik — %7 detuned reaktör zorunlu (350 Hz 7. harmonik)
+            // Yüksek harmonik — %7 detuned reaktör zorunlu
+            // Detuning: p = (50/189)² ≈ 0.07 → rezonans frekansı 189 Hz (3. harmonik altı)
             risk = .high
-            reactorFactor = 0.07    // p = (50/210)² ≈ 0.0566 → 7% detuned
+            reactorFactor = 0.07
         } else {
             // Çok yüksek THD — %14 reaktör veya aktif filtre
             risk = .high
@@ -313,6 +315,42 @@ struct CompensationEngine {
             targetCosPhi: input.targetCosPhi
         )
 
+        // 2b. Mevcut cos φ zaten hedefe ulaşmış — kompanzasyon gerekmiyor
+        if requiredQc <= 0 {
+            let currentState2 = calculateCurrentState(input: input)
+            return CompensationResult(
+                reactivePowerKVAr: currentState2.reactivePower,
+                currentCosPhi: derivedCosPhi,
+                penaltyThresholdKVAr: currentState2.penaltyThresholdKVAr,
+                monthlyPenaltyTL: currentState2.monthlyPenalty,
+                yearlyPenaltyTL: currentState2.monthlyPenalty * 12.0,
+                requiredQcKVAr: 0.0,
+                selectedSteps: [],
+                totalInstalledKVAr: 0.0,
+                capacitorType: "Kompanzasyon Gerekmiyor",
+                stepCount: 0,
+                stepSizeKVAr: 0.0,
+                contactorCurrentA: 0.0,
+                reactorRequired: false,
+                reactorRatingPercent: 0.0,
+                panelSizeDescription: "—",
+                resonanceFrequencyHz: 0.0,
+                harmonicRiskLevel: .low,
+                recommendedReactorFactor: 0.0,
+                transformerLoadBefore: nil,
+                transformerLoadAfter: nil,
+                capacityGainKVA: nil,
+                copperLossReductionPercent: nil,
+                totalMonthlySavingTL: 0.0,
+                paybackMonths: 0.0,
+                npvTL: 0.0,
+                irrPercent: 0.0,
+                cumulativeSavings: [],
+                achievedCosPhi: derivedCosPhi,
+                newApparentKVA: input.apparentPowerKVA
+            )
+        }
+
         // 3. Kademe seçimi
         let steps = selectCapacitorSteps(totalQcKVAr: requiredQc)
         let totalInstalledKVAr = steps.reduce(0.0) { $0 + $1.totalKVAr }
@@ -381,7 +419,7 @@ struct CompensationEngine {
         // 7. Ekonomik analiz
         let copperLossSavingMonthly: Double
         if let reduction = copperLossReduction, let trafoKVA = input.transformerKVA {
-            let nominalCopperLossKW = trafoKVA * 0.015 / 1000.0
+            let nominalCopperLossKW = trafoKVA * 0.015
             copperLossSavingMonthly = nominalCopperLossKW * (reduction / 100.0) * 720.0 * input.electricityTariff
         } else {
             copperLossSavingMonthly = 0.0

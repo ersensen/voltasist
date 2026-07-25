@@ -72,6 +72,7 @@ struct CableCalculatorView: View {
     @State private var lengthM = ""
     @State private var cosPhi = "0.90"
     @State private var groupCount = "1"
+    @State private var ambientTemperature = "30"
     
     // Limit ve İletken
     @State private var selectedLimit: CableLimitType = .mainFeed
@@ -335,6 +336,7 @@ struct CableCalculatorView: View {
                 gridInputField(label: "Hat Metrajı (Metre)", placeholder: "Örn: 60", text: $lengthM)
                 gridInputField(label: "Güç Faktörü (Cos Φ)", placeholder: "0.90", text: $cosPhi)
                 gridInputField(label: "Demet Devre Sayısı (Cg)", placeholder: "1", text: $groupCount)
+                gridInputField(label: "Ortam Sıcaklığı (°C)", placeholder: "30", text: $ambientTemperature)
             }
 
             Divider()
@@ -810,6 +812,7 @@ struct CableCalculatorView: View {
 
         let cosVal = Double(cosPhi.replacingOccurrences(of: ",", with: ".")) ?? 0.90
         let groupVal = Int(groupCount) ?? 1
+        let ambientVal = Double(ambientTemperature.replacingOccurrences(of: ",", with: ".")) ?? 30.0
 
         isCalculating = true
         resultVisible = false
@@ -824,7 +827,8 @@ struct CableCalculatorView: View {
                 installationType: selectedInsulation == .nym ? .surface : .inConduit,
                 cosPhi: cosVal,
                 targetVoltageDrop: selectedLimit.limit,
-                groupCount: groupVal
+                groupCount: groupVal,
+                ambientTemperature: ambientVal
             )
 
             let res = CableEngine.calculate(input: input, manualSection: isAuto ? nil : selectedManualSection)

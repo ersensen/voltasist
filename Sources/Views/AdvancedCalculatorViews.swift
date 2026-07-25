@@ -174,13 +174,17 @@ struct ShortCircuitCalculatorView: View {
             resultRow("%Uk Empedansı", String(format: "%.1f%%", uk))
             resultRow("Sistem Gerilimi", "\(systemVoltage) V")
 
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.system(size: 13))
-                Text("Gerçek değer kablo ve ağ empedanslarına göre daha düşük olabilir. Saha ölçümü ile doğrulayın.")
-                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.orange.opacity(0.85))
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.system(size: 13))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sadece trafo çıkışı için geçerlidir")
+                        .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                    Text("Uzak panellere uygulanamaz — kablo empedansı dahil değildir. Gerçek Icc her zaman daha düşüktür. Saha ölçümü ile doğrulayın.")
+                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.red.opacity(0.85))
+                }
             }
-            .padding(10).background(Color.orange.opacity(0.08)).cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+            .padding(10).background(Color.red.opacity(0.08)).cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.30), lineWidth: 1))
         }
         .padding(16).background(cardBG).cornerRadius(16).overlay(RoundedRectangle(cornerRadius: 16).stroke(color.opacity(0.35), lineWidth: 1))
     }
@@ -684,7 +688,7 @@ struct MotorStartingCalculatorView: View {
         VStack(spacing: 10) {
             hapBilgi(icon: "bolt.circle.fill", title: "Nominal Akım Formülü", body: "In = P / (√3 × U × η × cos φ)\nη ve cos φ ondalık olarak girilir (örn: 92% → 0.92)", color: color)
             hapBilgi(icon: "arrow.triangle.2.circlepath", title: "Yıldız-Üçgen Avantajı", body: "Başlatma akımını DOL'un 1/3'üne indirir. 5–30 sn sonra üçgen geçişte geçici akım artışı oluşur.", color: .teal)
-            hapBilgi(icon: "shield.fill", title: "Sigorta Seçimi", body: "Motor sigortaları: In × 1.25 kuralı, motor koruma şalteri (MKŞ) ile birlikte kullanılır. gG tipi sigorta tercih edin.", color: .orange)
+            hapBilgi(icon: "shield.fill", title: "Sigorta Seçimi", body: "Motor sigortaları: In × 1.25 kuralı, motor koruma şalteri (MKŞ) ile birlikte kullanılır. gM (motor koruma) veya AM tipi sigorta tercih edin — gG sigortalar uzun kalkış sürelerinde (Y-Δ, yük altında) nuisance trip yapabilir.", color: .orange)
             hapBilgi(icon: "cable.connector", title: "Kablo Boyutlandırma", body: "IEC 60364-5-52 tablosuna göre nominal akım baz alınır. Uzun mesafelerde gerilim düşümü kontrolü yapın.", color: .green)
         }
     }
@@ -697,7 +701,8 @@ struct MotorStartingCalculatorView: View {
         guard p > 0, u > 0, eta > 0, pf > 0 else { return }
 
         let nominalA = (p * 1000.0) / (sqrt(3.0) * u * eta * pf)
-        let startingA: Double = startMode == .starDelta ? nominalA * 2.0 : nominalA * 6.5
+        // Y-Δ: DOL faktörü / 3 ≈ 6.5/3 ≈ 2.17× (redüktörü olmayan tam yük kalkış)
+        let startingA: Double = startMode == .starDelta ? nominalA * (6.5 / 3.0) : nominalA * 6.5
 
         // Sigorta önerisi: In × 1.25, yukarıya yuvarla
         let fuseMin = nominalA * 1.25

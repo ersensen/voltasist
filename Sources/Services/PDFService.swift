@@ -347,9 +347,9 @@ struct PDFService {
                 .draw(in: CGRect(x: cols[5].x, y: cursorY + 6,
                                  width: cols[5].width - 4, height: Layout.rowHeight))
 
-            // Tutar (KDV dahil)
-            // vatRate model içinde 0.20 formatında saklanır (ondalik)
-            let lineTotal = item.unitPrice * item.quantity * (1.0 + item.vatRate)
+            // Tutar (KDV dahil, per-item iskonto uygulanmış)
+            // item.totalPrice = netPrice + vatAmount = quantity × unitPrice × (1 - discount) × (1 + vatRate)
+            let lineTotal = item.totalPrice
             NSAttributedString(string: formatCurrency(lineTotal), attributes: numAttrs)
                 .draw(in: CGRect(x: cols[6].x, y: cursorY + 6,
                                  width: cols[6].width - 4, height: Layout.rowHeight))
@@ -396,8 +396,8 @@ struct PDFService {
             .foregroundColor: Palette.amber
         ]
 
-        // Ara toplam
-        let subtotal = quote.items.reduce(0.0) { $0 + $1.unitPrice * $1.quantity }
+        // Ara toplam — KDV hariç, per-item iskonto uygulanmış (quote.subtotal = Σ netPrice)
+        let subtotal = quote.subtotal
         drawTotalRow(ctx: ctx,
                      label: "Ara Toplam",
                      value: formatCurrency(subtotal),
@@ -416,10 +416,8 @@ struct PDFService {
             rowY += 18
         }
 
-        // Toplam KDV
-        let vatTotal = quote.items.reduce(0.0) {
-            $0 + ($1.unitPrice * $1.quantity * $1.vatRate)
-        }
+        // Toplam KDV — per-item iskonto sonrası net fiyat üzerinden (quote.totalVAT = Σ vatAmount)
+        let vatTotal = quote.totalVAT
         drawTotalRow(ctx: ctx,
                      label: "KDV",
                      value: formatCurrency(vatTotal),
@@ -635,7 +633,7 @@ struct PDFService {
                 ("Görünür Güç",   String(format: "%.0f kVA",  apparentPowerKVA)),
                 ("Mevcut cos φ",  String(format: "%.3f",      currentCosPhi)),
                 ("Hedef cos φ",   String(format: "%.2f",      targetCosPhi)),
-                ("THD",           String(format: "%%.1f",     thdPercent)),
+                ("THD",           String(format: "%.1f%%",    thdPercent)),
                 ("Transformatör", String(format: "%.0f kVA",  transformerKVA)),
             ])
 

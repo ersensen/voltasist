@@ -131,7 +131,7 @@ struct CompensationCalculatorView: View {
     @State private var peakApparentKVA:  String = "210"
 
     // Sistem
-    @State private var targetCosPhi:  Double = 0.95
+    @State private var targetCosPhi:  Double = 0.97
     @State private var systemVoltage: String = "400"
     @State private var frequency:     Double = 50.0
     @State private var transformerKVA: String = "250"
@@ -158,6 +158,7 @@ struct CompensationCalculatorView: View {
     @State private var showQuoteAdded:   Bool = false
     @State private var pendingQuoteItems: [QuoteItem] = []
     @State private var showCustomerPicker: Bool = false
+    @State private var showNoCompensationAlert: Bool = false
 
     // Hesaplanan
     @State private var computedCosPhi:      Double = 100.0 / 140.0
@@ -468,7 +469,18 @@ struct CompensationCalculatorView: View {
                 Spacer()
                 Text(String(format: "%.2f", targetCosPhi)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.green)
             }
-            Slider(value: $targetCosPhi, in: 0.90...1.0, step: 0.01).tint(.green)
+            Slider(value: $targetCosPhi, in: 0.95...1.0, step: 0.01).tint(.green)
+            if targetCosPhi <= 0.96 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                    Text("cos φ = \(String(format: "%.2f", targetCosPhi)) seçildi. TEDAŞ ceza sınırına yakın — en az 0.97 önerilir.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 2)
+            }
             HStack {
                 Text("Tarife (₺/kVArh)").font(.system(size: 13, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.8))
                 Spacer()
@@ -982,9 +994,9 @@ struct CompensationCalculatorView: View {
     private var reactorTableCard: some View {
         let rows: [(thd: String, reactor: String, hz: String, color: Color)] = [
             ("< %5",  "Reaktör Gerekmez",      "—",      .green),
-            ("%5–8",  "%5.67 Detuned",          "250 Hz", .orange),
+            ("%5–8",  "%5.67 Detuned",          "210 Hz", .orange),
             ("%8–20", "%7 Detuned",              "189 Hz", Color(red:1,green:0.5,blue:0)),
-            ("> %20", "%14 / Aktif Filtre",     "135 Hz", .red),
+            ("> %20", "%14 / Aktif Filtre",     "134 Hz", .red),
         ]
         return VStack(spacing: 12) {
             HStack {
@@ -995,7 +1007,7 @@ struct CompensationCalculatorView: View {
             HStack {
                 Text("THD").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 55, alignment: .leading)
                 Text("Reaktör").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(maxWidth: .infinity, alignment: .leading)
-                Text("Koruma Hz").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 75, alignment: .trailing)
+                Text("Rezonans Hz").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.gray).frame(width: 75, alignment: .trailing)
             }
             .padding(.horizontal, 10).padding(.vertical, 6).background(Color.white.opacity(0.04)).cornerRadius(6)
 
@@ -1314,7 +1326,11 @@ struct CompensationCalculatorView: View {
     private var actionButtonsView: some View {
         VStack(spacing: 12) {
             Button {
-                guard computedCosPhi > 0, computedCosPhi < targetCosPhi else { return }
+                guard computedCosPhi > 0 else { return }
+                guard computedCosPhi < targetCosPhi else {
+                    showNoCompensationAlert = true
+                    return
+                }
                 let pKW = effectiveActivePowerKW
                 let sKVA = effectiveApparentPowerKVA
                 let input = CompensationInput(
@@ -1340,6 +1356,11 @@ struct CompensationCalculatorView: View {
                     .background(RoundedRectangle(cornerRadius: 16).fill(amber).shadow(color: amber.opacity(0.4), radius: 8, y: 4))
             }
             .buttonStyle(.plain)
+            .alert("Kompanzasyon Gerekmiyor", isPresented: $showNoCompensationAlert) {
+                Button("Tamam", role: .cancel) { }
+            } message: {
+                Text("Mevcut cos φ (\(String(format: "%.3f", computedCosPhi))) hedefi (\(String(format: "%.3f", targetCosPhi))) zaten karşılıyor — reaktif güç kompanzasyonuna gerek yok.")
+            }
 
             Button {
                 let pdfData = PDFService.generateCompensationReportPDF(
@@ -1460,7 +1481,7 @@ struct CompensationCalculatorView: View {
         let newQ = max(0, sqrt(max(0, sKVA * sKVA - pKW * pKW)) - computedQcKVAr)
         let newS = sqrt(pKW * pKW + newQ * newQ)
         let lossRed = (pow(sKVA / max(1, trafoKVA), 2) - pow(newS / max(1, trafoKVA), 2)) * 100
-        let copper  = max(0, (trafoKVA * 0.015 / 1000.0) * (lossRed / 100) * 720 * penaltyRate)
+        let copper  = max(0, (trafoKVA * 0.015) * (lossRed / 100) * 720 * penaltyRate)
         return (penalty, copper, penalty + copper)
     }
 

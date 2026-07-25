@@ -39,6 +39,9 @@ final class DashboardViewModel: ObservableObject {
     /// Yaklaşan geçerlilik tarihi olan teklif sayısı (7 gün içinde)
     @Published var expiringQuoteCount: Int = 0
 
+    /// cos φ < 0.90 olan (ceza riski taşıyan) bakım paneli sayısı
+    @Published var panelsWithCosPhiWarning: Int = 0
+
     // MARK: - Özel Değişkenler
 
     /// Combine abonelikleri için saklama koleksiyonu
@@ -69,6 +72,10 @@ final class DashboardViewModel: ObservableObject {
         pendingCount    = persistence.pendingQuoteCount
         customerCount   = persistence.customerCount
         expiringQuoteCount = persistence.expiringQuotes.count
+        panelsWithCosPhiWarning = persistence.maintenanceRecords.filter {
+            guard let cp = $0.lastCosPhi else { return false }
+            return cp < 0.95
+        }.count
 
         updateGreeting()
     }

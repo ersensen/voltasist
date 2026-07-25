@@ -20,8 +20,9 @@ struct LightingEngine {
     /// LED ışık verimliliği (lm/W) — güncel market ortalaması
     static let ledEfficacy: Double = 111.0   // 2000 lm / 18 W ≈ 111 lm/W
 
-    /// Floresan ışık verimliliği (lm/W) — T8 tüp referans
-    static let fluorescentEfficacy: Double = 60.0
+    /// Floresan ışık verimliliği (lm/W) — komple armatür (tüp + balast kayıpları dahil)
+    /// T8 çıplak tüp ≈ 60 lm/W; komple luminaire (balast ~%13 kayıp) ≈ 52 lm/W — EN 12464-1 referans
+    static let fluorescentEfficacy: Double = 52.0
 
     /// Yıllık çalışma saati varsayılanı (saat/yıl)
     static let defaultAnnualHours: Double = 4000.0  // ≈ 11 saat/gün × 365

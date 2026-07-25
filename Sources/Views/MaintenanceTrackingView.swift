@@ -301,7 +301,7 @@ struct MaintenanceRecordDetailView: View {
             }
         }
         .sheet(isPresented: $showAddReading) {
-            MaintenanceReadingFormView(defaultTariff: 0.40) { r in
+            MaintenanceReadingFormView(defaultTariff: 0.40, panelTotalKVAr: localRecord.totalKVAr) { r in
                 localRecord.readings.append(r)
                 persistence.saveMaintenanceRecord(localRecord)
                 scheduleNotification(for: localRecord)
@@ -1332,6 +1332,7 @@ struct MaintenanceReadingFormView: View {
 
     @Environment(\.dismiss) private var dismiss
     let defaultTariff: Double
+    let panelTotalKVAr: Double
     let onSave: (MaintenanceReading) -> Void
 
     @State private var readingID: UUID        = UUID()
@@ -1346,6 +1347,8 @@ struct MaintenanceReadingFormView: View {
     @State private var selectedImages: [UIImage] = []
     @State private var showPhotoPicker = false
     @State private var showCamera = false
+    @State private var measuredKVArStr: String = ""
+    @State private var thdStr: String          = ""
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -1370,8 +1373,9 @@ struct MaintenanceReadingFormView: View {
     private var capacitivePenaltyKVArh: Double { activeKWh > 0 ? max(0, capacitive - activeKWh * 0.20) : 0 }
     private var estimatedCapacitivePenalty: Double { capacitivePenaltyKVArh * (Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40) }
 
-    init(defaultTariff: Double, onSave: @escaping (MaintenanceReading) -> Void) {
+    init(defaultTariff: Double, panelTotalKVAr: Double = 0, onSave: @escaping (MaintenanceReading) -> Void) {
         self.defaultTariff = defaultTariff
+        self.panelTotalKVAr = panelTotalKVAr
         self.onSave = onSave
         _tariffStr = State(initialValue: String(format: "%.2f", defaultTariff))
     }
@@ -1430,6 +1434,24 @@ struct MaintenanceReadingFormView: View {
                         numericRow("Tarife (₺/kVArh)", $tariffStr)
                     }
 
+                    formSection("Saha Ölçümleri") {
+                        numericRow("Ölçülen Kapasite (kVAr)", $measuredKVArStr)
+                        Divider().background(amber.opacity(0.15))
+                        numericRow("THD (%)", $thdStr)
+                        let meas = Double(measuredKVArStr.replacingOccurrences(of: ",", with: "."))
+                        if let m = meas, panelTotalKVAr > 0, m < panelTotalKVAr * 0.80 {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.red)
+                                Text("Kapasite nominal değerin %80 altında (\(String(format: "%.0f", panelTotalKVAr * 0.80)) kVAr) — kondansatör değişimi önerilir.")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.red)
+                            }
+                            .padding(.top, 6)
+                        }
+                    }
+
                     formSection("Notlar") {
                         TextField("Saha notu, gözlem...", text: $notes, axis: .vertical)
                             .font(.system(size: 13, design: .rounded)).foregroundStyle(.white)
@@ -1462,6 +1484,8 @@ struct MaintenanceReadingFormView: View {
                         r.invoiceAmount   = Double(invoiceStr.replacingOccurrences(of: ",", with: ".")) ?? 0
                         r.tariff          = Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40
                         r.notes           = notes
+                        r.measuredKVAr    = Double(measuredKVArStr.replacingOccurrences(of: ",", with: "."))
+                        r.thdPercent      = Double(thdStr.replacingOccurrences(of: ",", with: "."))
                         var photoIDs: [UUID] = []
                         for img in selectedImages {
                             if let pid = PhotoStorageService.save(image: img, entityID: readingID) {

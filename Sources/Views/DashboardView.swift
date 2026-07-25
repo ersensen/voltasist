@@ -8,6 +8,7 @@ import SwiftUI
 struct DashboardView: View {
 
     @EnvironmentObject private var persistence: PersistenceService
+    @StateObject private var vm = DashboardViewModel()
     @State private var appeared = false
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
@@ -20,6 +21,9 @@ struct DashboardView: View {
                 kpiRow
                 if persistence.pendingMaintenanceCount > 0 {
                     maintenancePendingCard
+                }
+                if vm.panelsWithCosPhiWarning > 0 {
+                    cosPhiWarningCard(count: vm.panelsWithCosPhiWarning)
                 }
                 quickAccessSection
                 recentQuotesSection
@@ -46,6 +50,7 @@ struct DashboardView: View {
             }
         }
         .onAppear {
+            vm.refresh(from: persistence)
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1)) {
                 appeared = true
             }
@@ -192,6 +197,37 @@ struct DashboardView: View {
         )
         .opacity(appeared ? 1 : 0)
         .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.15), value: appeared)
+    }
+
+    // MARK: cos φ Warning Card
+
+    private func cosPhiWarningCard(count: Int) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Color.red)
+                .shadow(color: Color.red.opacity(0.5), radius: 6)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("cos φ Ceza Uyarısı")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("\(count) panelde cos φ < 0.90 — TEDAŞ ceza riski")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.red)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.gray.opacity(0.5))
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.red.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.red.opacity(0.3), lineWidth: 1))
+        )
+        .opacity(appeared ? 1 : 0)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2), value: appeared)
     }
 
     // MARK: Quick Access

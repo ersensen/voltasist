@@ -78,8 +78,8 @@ struct LoadEngine {
         let co2KgPerYear = yearlyKWh * co2FactorKgPerKWh
 
         // --- 9. Önerilen Ana Sigorta ---
-        // Sigorta = hat akımı × 1.25 — yukarı standart değere yuvarlama
-        let minFuse = currentA * 1.25
+        // IEC 60364-4-43: In ≥ Ib — sigorta anma akımı hat akımından küçük olamaz
+        let minFuse = currentA
         let recommendedMainFuse = nextStandardFuse(for: minFuse)
 
         // --- 10. Kategori Dağılımı ---

@@ -223,6 +223,9 @@ struct SolarCalculationResult: Codable {
     /// Batarya şarj akımı (A)
     var chargeCurrentA: Double
 
+    /// C-rate uyarısı — şarj akımı batarya kapasitesine göre yüksekse dolu; nil ise normal
+    var chargeCurrentWarning: String?
+
     // MARK: Ekonomik Analiz
 
     /// Toplam kurulum maliyeti (TL)

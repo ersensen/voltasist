@@ -669,7 +669,8 @@ struct CompensationCalculatorView: View {
     }
 
     private func stepRow(index i: Int) -> some View {
-        let amps = contactorAmps(forKVAr: editableSteps[i])
+        let amps: Double = contactorAmps(forKVAr: editableSteps[i])
+        let rowOpacity: Double = i % 2 == 0 ? 0.04 : 0.0
         return HStack {
             Text("\(i + 1)").font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.purple).frame(width: 28)
@@ -695,7 +696,7 @@ struct CompensationCalculatorView: View {
             .buttonStyle(.plain).frame(width: 32)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(i % 2 == 0 ? 0.04 : 0.0)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(rowOpacity)))
     }
 
     private var stepTableCard: some View {

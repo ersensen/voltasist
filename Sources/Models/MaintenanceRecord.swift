@@ -22,12 +22,13 @@ struct MaintenanceRecord: Identifiable, Codable {
     var stepCount: Int?          = nil
     /// Arızalı/devre dışı kademe sayısı — opsiyonel
     var failedStepCount: Int?    = nil
-    /// Tahmini panel ömrü (yıl) — varsayılan 15
-    var expectedLifeYears: Int   = 15
+    /// Tahmini panel ömrü (yıl) — opsiyonel; nil ise 15 yıl varsayılır
+    /// Optional yapı eski Codable kayıtlarında KeyNotFound decode hatasını önler
+    var expectedLifeYears: Int?  = nil
 
-    /// Tahmini kondansatör yenileme tarihi (kurulum tarihi + expectedLifeYears)
+    /// Tahmini kondansatör yenileme tarihi (kurulum tarihi + expectedLifeYears ?? 15)
     var estimatedReplacementDate: Date {
-        Calendar.current.date(byAdding: .year, value: expectedLifeYears, to: installationDate) ?? installationDate
+        Calendar.current.date(byAdding: .year, value: expectedLifeYears ?? 15, to: installationDate) ?? installationDate
     }
 
     var nextCheckDate: Date {

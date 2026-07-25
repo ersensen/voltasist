@@ -229,6 +229,7 @@ struct MaintenanceTrackingView: View {
 struct MaintenanceRecordDetailView: View {
 
     @EnvironmentObject private var persistence: PersistenceService
+    @Environment(\.dismiss) private var dismiss
     let record: MaintenanceRecord
 
     @State private var localRecord: MaintenanceRecord
@@ -294,6 +295,7 @@ struct MaintenanceRecordDetailView: View {
                     Divider()
                     Button("Kaydı Sil", role: .destructive) {
                         persistence.deleteMaintenanceRecord(id: localRecord.id)
+                        dismiss()
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle").foregroundStyle(amber)

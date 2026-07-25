@@ -211,7 +211,7 @@ struct DashboardView: View {
                 Text("cos φ Ceza Uyarısı")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                Text("\(count) panelde cos φ < 0.90 — TEDAŞ ceza riski")
+                Text("\(count) panelde cos φ < 0.95 — TEDAŞ ceza riski")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.red)
             }
@@ -286,14 +286,14 @@ struct DashboardView: View {
 
     private func quickDestination(for title: String) -> AnyView {
         switch title {
-        case "Kablo Kesit":  return AnyView(CableCalculatorView())
-        case "Yük / Güç":    return AnyView(LoadCalculatorView())
-        case "Aydınlatma":   return AnyView(LightingCalculatorView())
-        case "Kompanz.":     return AnyView(CompensationCalculatorView())
-        case "Solar":        return AnyView(SolarCalculatorView())
-        case "Teklif":       return AnyView(QuoteBuilderView())
-        case "Müşteriler":   return AnyView(CustomerListView())
-        case "Malzeme":      return AnyView(MaterialListView())
+        case "Kablo Kesit":  return AnyView(CableCalculatorView().environmentObject(persistence))
+        case "Yük / Güç":    return AnyView(LoadCalculatorView().environmentObject(persistence))
+        case "Aydınlatma":   return AnyView(LightingCalculatorView().environmentObject(persistence))
+        case "Kompanz.":     return AnyView(CompensationCalculatorView().environmentObject(persistence))
+        case "Solar":        return AnyView(SolarCalculatorView().environmentObject(persistence))
+        case "Teklif":       return AnyView(QuoteBuilderView().environmentObject(persistence))
+        case "Müşteriler":   return AnyView(CustomerListView().environmentObject(persistence))
+        case "Malzeme":      return AnyView(MaterialListView().environmentObject(persistence))
         default:             return AnyView(EmptyView())
         }
     }

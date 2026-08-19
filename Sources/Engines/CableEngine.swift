@@ -68,6 +68,23 @@ struct CableEngine {
         240.0: 286.0
     ]
 
+    // MARK: Sabitler (Gerilim Düşümü — IEC 60364-5-52 Ek G)
+
+    /// Bakır özdirenç, 70°C işletme sıcaklığında (Ω·mm²/m) — 1.25 × ρ20 (IEC 60364-5-52 Ek G)
+    static let rho1Copper: Double = 0.0225
+
+    /// Alüminyum özdirenç, 70°C işletme sıcaklığında (Ω·mm²/m) — 1.25 × ρ20 (IEC 60364-5-52 Ek G)
+    static let rho1Aluminum: Double = 0.036
+
+    /// Reaktans, kesitten bağımsız sabit değer (Ω/m) — IEC 60364-5-52 Ek G
+    static let reactancePerMeter: Double = 0.00008
+
+    /// Tek faz nominal faz-nötr gerilimi (V) — gerilim düşümü yüzdesi bu referansa göre hesaplanır
+    static let u0SinglePhase: Double = 230.0
+
+    /// Üç faz nominal hat gerilimi (V) — gerilim düşümü yüzdesi bu referansa göre hesaplanır
+    static let uThreePhase: Double = 400.0
+
     // MARK: Ana Hesaplama
 
     /// Kablo kesiti ve gerilim düşümü hesapla
@@ -111,21 +128,19 @@ struct CableEngine {
         let sectionByCapacity = minimumSectionForCurrent(requiredCapacity, table: capacityTable)
 
         // --- 3. Gerilim Düşümü Kesiti ---
-        // Gerilim düşümü formülü:
-        //   Tek faz: ΔU% = (2 × ρ × L × I × 100) / (A × V)
-        //   Üç faz: ΔU% = (√3 × ρ × L × I × 100) / (A × V)
-        // A = (2 × ρ × L × I × 100) / (ΔU% × V)  — tek faz için
-        let resistivity = 1.0 / input.conductorType.conductivity  // Ω·mm²/m
-        let maxDropVolts = input.voltageV * input.targetVoltageDrop / 100.0
+        // IEC 60364-5-52 Ek G: ΔU = b × I × L × (ρ1/A × cosφ + λ × sinφ)
+        // A = (b × I × L × ρ1 × cosφ) / (ΔUmax − b × I × L × λ × sinφ)
+        let phaseCoefficient = input.phaseCount == 1 ? 2.0 : sqrt(3.0)
+        let rho1: Double = input.conductorType == .copper
+            ? CableEngine.rho1Copper
+            : CableEngine.rho1Aluminum
+        let sinPhi = sqrt(1.0 - input.cosPhi * input.cosPhi)
+        let referenceVoltage = input.phaseCount == 1 ? CableEngine.u0SinglePhase : CableEngine.uThreePhase
+        let maxDropVolts = referenceVoltage * input.targetVoltageDrop / 100.0
 
-        let sectionByVoltageDrop: Double
-        if input.phaseCount == 1 {
-            // A = (2 × ρ × L × I) / ΔUmax(V)
-            sectionByVoltageDrop = (2.0 * resistivity * input.lengthM * current) / maxDropVolts
-        } else {
-            // A = (√3 × ρ × L × I) / ΔUmax(V)
-            sectionByVoltageDrop = (sqrt(3.0) * resistivity * input.lengthM * current) / maxDropVolts
-        }
+        let reactiveDropVolts = phaseCoefficient * current * input.lengthM * CableEngine.reactancePerMeter * sinPhi
+        let sectionByVoltageDrop = (phaseCoefficient * current * input.lengthM * rho1 * input.cosPhi)
+            / (maxDropVolts - reactiveDropVolts)
 
         // --- 4. Gerekli Minimum Kesit (İki Kriter Maksimumu) ---
         let requiredSection = max(sectionByCapacity, sectionByVoltageDrop)
@@ -139,14 +154,11 @@ struct CableEngine {
         }
 
         // --- 6. Seçilen Kesitle Gerilim Düşümü Doğrulaması ---
-        let actualVoltageDrop: Double
-        if input.phaseCount == 1 {
-            actualVoltageDrop = (2.0 * resistivity * input.lengthM * current) / recommendedSection
-        } else {
-            actualVoltageDrop = (sqrt(3.0) * resistivity * input.lengthM * current) / recommendedSection
-        }
-        let actualVoltageDropPercent = (actualVoltageDrop / input.voltageV) * 100.0
-        let isVoltageDropOK = actualVoltageDropPercent <= input.targetVoltageDrop
+        // ΔU = b × I × L × (ρ1/A × cosφ + λ × sinφ)  — IEC 60364-5-52 Ek G
+        let actualVoltageDrop = phaseCoefficient * current * input.lengthM *
+            ((rho1 / recommendedSection) * input.cosPhi + CableEngine.reactancePerMeter * sinPhi)
+        let actualVoltageDropPercent = (actualVoltageDrop / referenceVoltage) * 100.0
+        let isVoltageDropWithinLimit = actualVoltageDropPercent <= input.targetVoltageDrop
 
         // --- 7. Sigorta Seçimi ---
         // IEC 60364-4-43 md.433.1: Ib ≤ In ≤ Iz — sigorta yük akımından küçük olmaz
@@ -157,12 +169,16 @@ struct CableEngine {
         let cableCapacity = (capacityTable[recommendedSection] ?? 0.0) * deratingFactor
 
         // --- 9. Uyarı Mesajı ---
+        // Sabit eşik yok — sınır çağıran taraftan (devre tipine göre) gelen input.targetVoltageDrop'tur.
         var warning: String?
 
-        if actualVoltageDropPercent > 5.0 {
-            warning = "⚠️ Gerilim düşümü %\(String(format: "%.1f", actualVoltageDropPercent)) — IEC sınırının üzerinde. Hat uzunluğunu veya kesiti gözden geçirin."
-        } else if actualVoltageDropPercent > input.targetVoltageDrop {
-            warning = "⚠️ Gerilim düşümü %\(String(format: "%.1f", actualVoltageDropPercent)) — hedef değerin üzerinde."
+        let dropStr = String(format: "%.1f", actualVoltageDropPercent)
+        let limitStr = String(format: "%.1f", input.targetVoltageDrop)
+
+        if actualVoltageDropPercent > input.targetVoltageDrop {
+            warning = "Gerilim düşümü %\(dropStr) — Elektrik İç Tesisleri Yönetmeliği sınırı %\(limitStr) aşıldı. Hat uzunluğunu veya kesiti gözden geçirin."
+        } else {
+            warning = "Gerilim düşümü %\(dropStr) — Elektrik İç Tesisleri Yönetmeliği sınırı %\(limitStr) içinde kalıyor."
         }
 
         if input.conductorType == .aluminum && recommendedSection < 16.0 {
@@ -174,7 +190,7 @@ struct CableEngine {
         let maxTableCapacity = (capacityTable[240.0] ?? 0.0) * deratingFactor
         if manualSection == nil && current > maxTableCapacity {
             // Yük akımı standart tablo üst sınırını aşıyor — otomatik seçimde tek kablo yeterli değil
-            let parallelWarning = "⚠️ Yük akımı (\(String(format: "%.0f", current)) A) tek kablo için maksimum kapasiteyi (\(String(format: "%.0f", maxTableCapacity)) A) aşıyor — paralel kablo grubu veya bara sistemi gereklidir."
+            let parallelWarning = "Yük akımı (\(String(format: "%.0f", current)) A) tek kablo için maksimum kapasiteyi (\(String(format: "%.0f", maxTableCapacity)) A) aşıyor — paralel kablo grubu veya bara sistemi gereklidir."
             warning = warning != nil ? "\(warning!) \(parallelWarning)" : parallelWarning
         } else if cableCapacity < current {
             // Manuel seçim yeterli değil
@@ -189,7 +205,7 @@ struct CableEngine {
             voltageDrop: actualVoltageDropPercent,
             voltageDropV: actualVoltageDrop,
             recommendedFuseA: selectedFuse,
-            isVoltagDropOK: isVoltageDropOK,
+            isVoltageDropWithinLimit: isVoltageDropWithinLimit,
             warningMessage: warning,
             currentCapacityA: cableCapacity
         )

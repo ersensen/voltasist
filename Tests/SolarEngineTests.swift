@@ -6,7 +6,7 @@
 // Sistem kapasitesi formülü: kWp = (aylık kWh / 30) / (PSH × PR)
 
 import XCTest
-@testable import UygulamaMotoru
+@testable import VoltAsist
 
 // MARK: - SolarEngineTests
 

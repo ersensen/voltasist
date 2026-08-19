@@ -158,8 +158,8 @@ struct CableCalculationResult: Codable {
     /// Önerilen sigorta değeri (A) — standart değerlerden
     var recommendedFuseA: Int
 
-    /// Gerilim düşümü IEC sınırı içinde mi?
-    var isVoltagDropOK: Bool
+    /// Gerilim düşümü, devre tipine göre belirlenen sınır (targetVoltageDrop) içinde mi?
+    var isVoltageDropWithinLimit: Bool
 
     /// Varsa uyarı mesajı (aşırı yük, uzun hat vb.)
     var warningMessage: String?

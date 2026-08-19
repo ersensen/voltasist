@@ -5,7 +5,7 @@
 // KDV dahil toplam, iskonto sonrası fiyat ve teklif numarası formatı test edilir.
 
 import XCTest
-@testable import UygulamaMotoru
+@testable import VoltAsist
 
 // MARK: - QuoteEngineTests
 

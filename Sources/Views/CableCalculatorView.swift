@@ -572,17 +572,18 @@ struct CableCalculatorView: View {
             }
 
             if let warning = res.warningMessage {
+                let isOK = res.isVoltageDropWithinLimit
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                    Image(systemName: isOK ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(isOK ? .green : .orange)
                     Text(warning)
                         .font(.system(size: 11))
-                        .foregroundColor(.orange.opacity(0.9))
+                        .foregroundColor(isOK ? .green.opacity(0.9) : .orange.opacity(0.9))
                 }
                 .padding(12)
-                .background(Color.orange.opacity(0.08))
+                .background(isOK ? Color.green.opacity(0.08) : Color.orange.opacity(0.08))
                 .cornerRadius(10)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(isOK ? Color.green.opacity(0.3) : Color.orange.opacity(0.3), lineWidth: 1))
                 .padding(.top, 16)
                 .shake(trigger: warningShake)
             }

@@ -1,5 +1,5 @@
 import XCTest
-@testable import UygulamaMotoru
+@testable import VoltAsist
 
 /// LoginViewModel'in iş mantığını doğrulayan XCTest birim (unit) testleri sınıfı.
 /// Boş girdi, geçersiz e-posta, başarılı giriş ve Türkçe hata mesajlarını doğrular.

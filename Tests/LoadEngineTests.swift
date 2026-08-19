@@ -5,7 +5,7 @@
 // Referans değerler IEC 60038 ve EPDK tarife tablosuna dayanmaktadır.
 
 import XCTest
-@testable import UygulamaMotoru
+@testable import VoltAsist
 
 // MARK: - LoadEngineTests
 

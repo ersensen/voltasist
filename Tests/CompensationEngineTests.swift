@@ -6,7 +6,7 @@
 // Qc = P × (tanφ₁ - tanφ₂) formülü esas alınmıştır.
 
 import XCTest
-@testable import UygulamaMotoru
+@testable import VoltAsist
 
 // MARK: - CompensationEngineTests
 

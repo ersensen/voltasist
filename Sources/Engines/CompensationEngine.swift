@@ -75,40 +75,43 @@ struct CompensationEngine {
 
     // MARK: - Standart Kademe Seçimi
 
-    /// Toplam gerekli kVAr için optimum standart kademe kombinasyonunu seç
-    /// Büyük kademelerden başlayarak açgözlü algoritma kullanır
+    /// Toplam gerekli kVAr için eşit büyüklükte kademelerden oluşan bir AKP kombinasyonu seçer.
+    ///
+    /// Önceki sürüm büyükten küçüğe açgözlü (greedy) seçim yapıyordu; bu, hedefi yukarı
+    /// yuvarlamayabiliyordu (0.5 kVAr'a kadar eksik kurulum — ceza tam sıfırlanmayabiliyordu) ve
+    /// tek bir dev kademe + küçük bir "kırıntı" kademe üretiyordu (örn. 125 kVAr → 100+25, aradaki
+    /// 75 kVAr'lık aralıkta hiçbir ayar noktası yok). Sahada bunun iki sonucu oluyordu: (1) yük
+    /// dalgalanınca sistem ya ceza sınırının altına inemiyor ya da aşırı kompanzasyona sıçrıyor,
+    /// (2) en büyük kademenin kontaktörü tüm anahtarlamayı tek başına taşıyıp erken yıpranıyor.
+    ///
+    /// Bu sürüm hedefi eşit büyüklükte N kademeye bölüp en yakın standart değere yukarı yuvarlıyor:
+    /// hem hedefi asla eksik bırakmıyor (ceil ile) hem de kademeler arası boşluğu küçültüyor hem de
+    /// kontaktör aşınmasını kademeler arasında dengeliyor (gerçek AKP kontrolörlerinin eşit
+    /// kademelerde yaptığı "kademe rotasyonu" ile aşınma dengelemesini mümkün kılıyor).
     /// - Parameter totalQcKVAr: Gerekli toplam kompanzasyon gücü (kVAr)
-    /// - Returns: Seçilen kondansatör kademeleri
+    /// - Returns: Seçilen kondansatör kademeleri (tek rating, dengeli adet)
     static func selectCapacitorSteps(totalQcKVAr: Double) -> [CapacitorStep] {
-        var remaining = totalQcKVAr
-        var steps: [CapacitorStep] = []
+        guard totalQcKVAr > 0 else { return [] }
 
-        // Büyük kademeden küçüğe doğru seç
-        let sortedRatings = standardStepRatings.sorted(by: >)
-
-        for rating in sortedRatings {
-            if remaining <= 0 { break }
-            let qty = Int(remaining / rating)
-            if qty > 0 {
-                steps.append(CapacitorStep(ratingKVAr: rating, quantity: qty))
-                remaining -= rating * Double(qty)
-            }
+        // Hedef kademe sayısı — büyük ihtiyaçlarda daha fazla, ince ayarlı kademe;
+        // küçük ihtiyaçlarda tek/az kademe (sabit kondansatör de olabilir) yeterli.
+        let targetStepCount: Int
+        switch totalQcKVAr {
+        case ..<10:     targetStepCount = 1
+        case 10..<25:   targetStepCount = 2
+        case 25..<60:   targetStepCount = 3
+        case 60..<120:  targetStepCount = 4
+        case 120..<250: targetStepCount = 6
+        default:        targetStepCount = 8
         }
 
-        // Kalan küçük değer için en küçük kademeyi ekle
-        if remaining > 0.5 && remaining <= sortedRatings.last ?? 2.5 {
-            if let smallest = standardStepRatings.first {
-                steps.append(CapacitorStep(ratingKVAr: smallest, quantity: 1))
-            }
-        }
+        let idealStepSize = totalQcKVAr / Double(targetStepCount)
+        let rating = standardStepRatings.first { $0 >= idealStepSize } ?? standardStepRatings.last!
 
-        // Aynı rating'deki girişleri (greedy + kalan bloğu çakışması) tek CapacitorStep'te birleştir
-        var merged: [Double: Int] = [:]
-        for step in steps where step.quantity > 0 {
-            merged[step.ratingKVAr, default: 0] += step.quantity
-        }
-        return merged.sorted { $0.key > $1.key }
-                     .map { CapacitorStep(ratingKVAr: $0.key, quantity: $0.value) }
+        // Yukarı yuvarlama (ceil) — hedef hiçbir zaman eksik kurulmaz.
+        let quantity = max(1, Int(ceil(totalQcKVAr / rating)))
+
+        return [CapacitorStep(ratingKVAr: rating, quantity: quantity)]
     }
 
     // MARK: - 7.3 AKP Parametreleri
@@ -160,8 +163,8 @@ struct CompensationEngine {
         let resonanceHz = 50.0 * sqrt((shortCircuitMVA * 1000.0) / max(1.0, installedQcKVAr))
 
         // Risk seviyesi değerlendirmesi
-        let risk: HarmonicRisk
-        let reactorFactor: Double
+        var risk: HarmonicRisk
+        var reactorFactor: Double
 
         if thd < 5.0 {
             // Düşük harmonik — reaktör gerekmez
@@ -181,6 +184,18 @@ struct CompensationEngine {
             // Çok yüksek THD — %14 reaktör veya aktif filtre
             risk = .high
             reactorFactor = 0.14    // 3. harmonik koruması
+        }
+
+        // Rezonans-harmonik çakışma kontrolü — ölçülen THD düşük olsa bile Qc/trafo oranı
+        // rezonansı 5. (250 Hz) veya 7. (350 Hz) harmoniğin yakınına düşürüyorsa gerçek risk
+        // THD okumasından bağımsızdır: tesise sonradan bir harmonik kaynağı (VFD, kaynak
+        // makinesi vb.) girdiğinde amplifikasyon/kondansatör arızası oluşur. Önceki sürümde
+        // resonanceHz hesaplanıyor ama karara hiç dahil edilmiyordu — bu satırlar o eksiği kapatır.
+        let dangerousHarmonicHz: [Double] = [250.0, 350.0]  // 5. ve 7. harmonik
+        let resonanceNearHarmonic = dangerousHarmonicHz.contains { abs(resonanceHz - $0) / $0 < 0.15 }
+        if resonanceNearHarmonic && risk == .low {
+            risk = .medium
+            reactorFactor = 0.0567
         }
 
         return (resonanceHz, risk, reactorFactor)
@@ -367,6 +382,17 @@ struct CompensationEngine {
             ? String(format: "Kurulan kapasite ihtiyacın %%%.0f üzerinde — minimum standart kademe (2.5 kVAr) küçük yükler için orantısız büyük kalıyor, sabit kondansatörlü özel çözüm değerlendirilebilir.", oversizeRatio * 100)
             : nil
 
+        // Kapasitif aşırı kompanzasyon riski: kurulu kapasite, bu ölçüm noktasındaki reaktif
+        // gücü aktif gücün %20'sinden fazla aşıyorsa TEDAŞ kapasitif ceza sınırına girilir
+        // (bkz. MaintenanceReading.capacitivePenaltyKVArh — aynı %20 eşiği). Yük düşünce
+        // (gece/hafta sonu) bu risk daha da büyür; burada sadece ölçülen noktadaki statik
+        // kontrol yapılır, gerçek risk saha ölçümüyle teyit edilmelidir.
+        let capacitiveExcessKVAr = max(0.0, totalInstalledKVAr - reactivePowerKVAr)
+        let capacitivePenaltyThresholdKVAr = input.activePowerKW * 0.20
+        let capacitiveRiskWarning: String? = capacitiveExcessKVAr > capacitivePenaltyThresholdKVAr
+            ? String(format: "Kurulu kapasite (%.1f kVAr), bu ölçüm noktasındaki reaktif gücü (%.1f kVAr) aşıyor — TEDAŞ kapasitif ceza sınırı (aktif gücün %%20'si) aşılabilir. Yük düştüğünde (gece/hafta sonu) risk büyür; kademeli/otomatik kompanzasyon veya saha ölçümüyle teyit önerilir.", totalInstalledKVAr, reactivePowerKVAr)
+            : nil
+
         // AKP mi, sabit mi?
         let totalStepCount = steps.reduce(0) { $0 + $1.quantity }
         let isAutomatic = totalStepCount > 1
@@ -475,7 +501,8 @@ struct CompensationEngine {
             cumulativeSavings: roi.cumulativeSavings,
             achievedCosPhi: achievedCosPhi,
             newApparentKVA: newApparentKVA,
-            oversizingWarning: oversizingWarning
+            oversizingWarning: oversizingWarning,
+            capacitiveRiskWarning: capacitiveRiskWarning
         )
     }
 }

@@ -166,6 +166,7 @@ struct CompensationCalculatorView: View {
     @State private var computedQcKVAr:        Double  = 0.0
     @State private var computedMonthlySaving: Double  = 0.0
     @State private var engineOversizingWarning: String? = nil
+    @State private var engineCapacitiveRiskWarning: String? = nil
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -755,6 +756,24 @@ struct CompensationCalculatorView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+                )
+            }
+
+            // Kapasitif aşırı kompanzasyon riski uyarısı
+            if let warning = engineCapacitiveRiskWarning {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.red)
+                    Text(warning)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.red.opacity(0.25), lineWidth: 1))
                 )
             }
 
@@ -1597,8 +1616,16 @@ struct CompensationCalculatorView: View {
             engineOversizingWarning = ratio > 0.5
                 ? String(format: "Kurulan kapasite ihtiyacın %%%.0f üzerinde — minimum standart kademe (2.5 kVAr) küçük yükler için orantısız büyük kalıyor, sabit kondansatörlü özel çözüm değerlendirilebilir.", ratio * 100)
                 : nil
+
+            // Kapasitif aşırı kompanzasyon riski — kurulu kapasite bu ölçüm noktasındaki
+            // reaktif gücü aktif gücün %20'sinden fazla aşarsa TEDAŞ kapasitif ceza sınırı riski
+            let capacitiveExcess = max(0.0, eTotal - qReactive)
+            engineCapacitiveRiskWarning = capacitiveExcess > p * 0.20
+                ? String(format: "Kurulu kapasite (%.1f kVAr), bu ölçüm noktasındaki reaktif gücü (%.1f kVAr) aşıyor — TEDAŞ kapasitif ceza sınırı (aktif gücün %%20'si) aşılabilir. Yük düştüğünde (gece/hafta sonu) risk büyür.", eTotal, qReactive)
+                : nil
         } else {
             engineOversizingWarning = nil
+            engineCapacitiveRiskWarning = nil
         }
 
         rebuildEditableSteps()
@@ -1610,9 +1637,9 @@ struct CompensationCalculatorView: View {
         if thdPercent < 5 {
             return ("Reaktör Gerekmez", "—", .green, "THD < %5 — şebeke temiz")
         } else if thdPercent < 8 {
-            return ("%5.67 Detuned Reaktör", "p = 0.0567", .orange, "250 Hz koruma — 5. harmonik")
+            return ("%5.67 Detuned Reaktör", "p = 0.0567", .orange, "210 Hz koruma — 5. harmonik altı")
         } else if thdPercent < 20 {
-            return ("%7 Detuned Reaktör", "p = 0.07", Color(red:1,green:0.5,blue:0), "189 Hz rezonans — 7. harmonik")
+            return ("%7 Detuned Reaktör", "p = 0.07", Color(red:1,green:0.5,blue:0), "189 Hz rezonans — 3. harmonik altı")
         } else {
             return ("%14 / Aktif Filtre", "p = 0.14", .red, "3. harmonik koruması — aktif filtre değerlendirin")
         }

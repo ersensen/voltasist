@@ -236,6 +236,9 @@ struct CompensationResult: Codable {
     /// Aşırı kurulum uyarısı — kurulan kapasite ihtiyacın %50'sinden fazlasını aşıyorsa dolar
     var oversizingWarning: String? = nil
 
+    /// Kapasitif aşırı kompanzasyon (TEDAŞ %20 sınırı) riski uyarısı
+    var capacitiveRiskWarning: String? = nil
+
     // MARK: Uyumluluk Alias'ları
 
     /// Gerekli kondansatör kapasitesi (kVAr) — requiredQcKVAr ile aynı

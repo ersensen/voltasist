@@ -220,6 +220,14 @@ struct Quote: Codable, Identifiable {
     /// Proje adı / açıklaması
     var projectTitle: String?
 
+    /// Saha/iş fotoğrafları — PhotoStorageService içinde quote.id ile saklanır.
+    /// Optional yapı eski Codable kayıtlarında KeyNotFound decode hatasını önler
+    /// (bkz. MaintenanceRecord.stepCount aynı desen).
+    var photoIDs: [UUID]? = nil
+
+    /// Bu teklife karşılık alınan tahsilatlar — Optional gerekçesi photoIDs ile aynı.
+    var payments: [QuotePayment]? = nil
+
     // MARK: Hesaplanan Değerler
 
     /// Ara toplam (TL) — tüm kalemlerin net fiyatı toplamı
@@ -245,6 +253,21 @@ struct Quote: Codable, Identifiable {
     /// İskonto tutarı (TL)
     var discountAmount: Double {
         grandTotal - grandTotalAfterDiscount
+    }
+
+    /// Bu teklife karşılık şu ana kadar tahsil edilen toplam tutar (TL)
+    var totalPaidTL: Double {
+        (payments ?? []).reduce(0.0) { $0 + $1.amount }
+    }
+
+    /// Kalan bakiye (TL) — iskonto sonrası genel toplamdan tahsilatlar düşülür, negatife inmez
+    var remainingBalanceTL: Double {
+        max(0.0, grandTotalAfterDiscount - totalPaidTL)
+    }
+
+    /// Teklif tutarının tamamı tahsil edilmiş mi?
+    var isFullyPaid: Bool {
+        grandTotalAfterDiscount > 0 && remainingBalanceTL <= 0.01
     }
 
     /// Teklifin süresi dolmuş mu?

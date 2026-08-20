@@ -5,6 +5,7 @@
 // Teklif durumunu onaylama/reddetme akışı da bu ekrandan yönetilir.
 
 import SwiftUI
+import UIKit
 
 // MARK: - QuotePreviewView
 
@@ -19,6 +20,19 @@ struct QuotePreviewView: View {
     @State private var showShareSheet  = false
     @State private var pdfURL: URL?
     @State private var showStatusPicker = false
+
+    // MARK: Saha Fotoğrafları
+    @State private var photos: [(id: UUID, image: UIImage)] = []
+    @State private var fullScreenImage: UIImage? = nil
+    @State private var showPhotoPicker = false
+    @State private var showCamera = false
+
+    // MARK: Tahsilat
+    @State private var showAddPayment = false
+    @State private var newPaymentAmount: Double = 0
+    @State private var newPaymentDate: Date = Date()
+    @State private var newPaymentMethod: PaymentMethod = .cash
+    @State private var newPaymentNote: String = ""
 
     private let amber  = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let darkBG = Color(red: 0.07, green: 0.07, blue: 0.09)
@@ -38,6 +52,10 @@ struct QuotePreviewView: View {
                         itemsTableCard
                         // Toplam bloğu
                         totalsCard
+                        // Tahsilat
+                        paymentCard
+                        // Saha fotoğrafları
+                        photoCard
                         // Notlar
                         if let notes = vm.currentQuote.notes, !notes.isEmpty {
                             notesCard(notes: notes)
@@ -71,8 +89,34 @@ struct QuotePreviewView: View {
             .sheet(isPresented: $showStatusPicker) {
                 statusPickerSheet
             }
+            .sheet(isPresented: $showPhotoPicker) {
+                PhotoPickerView { images in
+                    for img in images { vm.addPhoto(img, persistence: persistence) }
+                    reloadPhotos()
+                }
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraPickerView { image in
+                    vm.addPhoto(image, persistence: persistence)
+                    reloadPhotos()
+                }
+            }
+            .sheet(isPresented: .init(
+                get: { fullScreenImage != nil },
+                set: { if !$0 { fullScreenImage = nil } }
+            )) {
+                if let img = fullScreenImage { PhotoFullScreenView(image: img) }
+            }
+            .sheet(isPresented: $showAddPayment) {
+                addPaymentSheet
+            }
             .toolbar(.hidden, for: .tabBar)
+            .onAppear { reloadPhotos() }
         }
+    }
+
+    private func reloadPhotos() {
+        photos = PhotoStorageService.loadAll(photoIDs: vm.currentQuote.photoIDs ?? [], entityID: vm.currentQuote.id)
     }
 
     // MARK: - Header Kartı
@@ -278,6 +322,191 @@ struct QuotePreviewView: View {
         .background(Color.green.opacity(0.05))
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.green.opacity(0.15), lineWidth: 1))
+    }
+
+    // MARK: - Tahsilat Kartı
+
+    private var paymentCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Tahsilat", systemImage: "banknote.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.gray)
+
+            Divider().background(Color.white.opacity(0.08))
+
+            totalRow(label: "Tahsil Edilen", value: formatTL(vm.currentQuote.totalPaidTL))
+            HStack {
+                Text("Kalan Bakiye")
+                    .font(.system(size: 13))
+                    .foregroundColor(.gray)
+                Spacer()
+                if vm.currentQuote.isFullyPaid {
+                    Label("Tamamlandı", systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.green)
+                } else {
+                    Text(formatTL(vm.currentQuote.remainingBalanceTL))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.red)
+                }
+            }
+
+            if let payments = vm.currentQuote.payments, !payments.isEmpty {
+                ForEach(payments.sorted(by: { $0.date > $1.date })) { payment in
+                    HStack(spacing: 8) {
+                        Image(systemName: payment.method.systemIcon)
+                            .font(.system(size: 12))
+                            .foregroundColor(amber)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(formatTL(payment.amount))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("\(payment.method.rawValue) · \(payment.date.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.system(size: 10))
+                                .foregroundColor(.gray)
+                        }
+                        Spacer()
+                        Button {
+                            vm.removePayment(payment.id, persistence: persistence)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 2)
+                }
+            }
+
+            Button {
+                newPaymentAmount = vm.currentQuote.remainingBalanceTL
+                newPaymentDate = Date()
+                newPaymentMethod = .cash
+                newPaymentNote = ""
+                showAddPayment = true
+            } label: {
+                Label("Ödeme Ekle", systemImage: "plus.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(amber)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+
+    private var addPaymentSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Tutar") {
+                    TextField("0", value: $newPaymentAmount, format: .number)
+                        .keyboardType(.decimalPad)
+                }
+                Section("Tarih") {
+                    DatePicker("Tarih", selection: $newPaymentDate, displayedComponents: .date)
+                        .labelsHidden()
+                }
+                Section("Yöntem") {
+                    Picker("Yöntem", selection: $newPaymentMethod) {
+                        ForEach(PaymentMethod.allCases) { method in
+                            Text(method.rawValue).tag(method)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Not (opsiyonel)") {
+                    TextField("Not", text: $newPaymentNote)
+                }
+            }
+            .navigationTitle("Ödeme Ekle")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { showAddPayment = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Kaydet") {
+                        let payment = QuotePayment(
+                            date: newPaymentDate,
+                            amount: newPaymentAmount,
+                            method: newPaymentMethod,
+                            note: newPaymentNote
+                        )
+                        vm.addPayment(payment, persistence: persistence)
+                        showAddPayment = false
+                    }
+                    .disabled(newPaymentAmount <= 0)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    // MARK: - Saha Fotoğrafları Kartı
+
+    private var photoCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Saha Fotoğrafları", systemImage: "camera.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.gray)
+                Spacer()
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button { showCamera = true } label: {
+                        Image(systemName: "camera.fill").font(.system(size: 16)).foregroundColor(amber)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 10)
+                }
+                Button { showPhotoPicker = true } label: {
+                    Image(systemName: "photo.fill.on.rectangle.fill").font(.system(size: 16)).foregroundColor(amber)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Divider().background(Color.white.opacity(0.08))
+
+            if photos.isEmpty {
+                Text("Saha kanıtı veya keşif fotoğrafı eklemek için kamera/galeri ikonuna basın.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(photos, id: \.id) { entry in
+                            ZStack(alignment: .topTrailing) {
+                                Button { fullScreenImage = entry.image } label: {
+                                    Image(uiImage: entry.image)
+                                        .resizable().scaledToFill()
+                                        .frame(width: 84, height: 84).clipped()
+                                        .cornerRadius(10)
+                                }
+                                .buttonStyle(.plain)
+                                Button {
+                                    vm.removePhoto(entry.id, persistence: persistence)
+                                    reloadPhotos()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.white)
+                                        .background(Circle().fill(Color.black.opacity(0.4)))
+                                }
+                                .buttonStyle(.plain).offset(x: 4, y: -4)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
 
     // MARK: - Paylaşım Barı

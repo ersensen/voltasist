@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import UIKit
 
 // MARK: - QuoteViewModel
 
@@ -127,6 +128,36 @@ final class QuoteViewModel: ObservableObject {
                 ShareService.openWhatsApp(phone: phone, message: message)
             }
         }
+    }
+
+    // MARK: - Saha Fotoğrafları
+
+    /// Yeni bir saha fotoğrafı ekler ve teklifi kalıcı olarak kaydeder.
+    func addPhoto(_ image: UIImage, persistence: PersistenceService) {
+        guard let id = PhotoStorageService.save(image: image, entityID: currentQuote.id) else { return }
+        currentQuote.photoIDs = (currentQuote.photoIDs ?? []) + [id]
+        persistence.saveQuote(currentQuote)
+    }
+
+    /// Bir saha fotoğrafını siler ve teklifi kalıcı olarak kaydeder.
+    func removePhoto(_ photoID: UUID, persistence: PersistenceService) {
+        PhotoStorageService.delete(photoID: photoID, entityID: currentQuote.id)
+        currentQuote.photoIDs?.removeAll { $0 == photoID }
+        persistence.saveQuote(currentQuote)
+    }
+
+    // MARK: - Tahsilat
+
+    /// Yeni bir tahsilat kaydı ekler ve teklifi kalıcı olarak kaydeder.
+    func addPayment(_ payment: QuotePayment, persistence: PersistenceService) {
+        currentQuote.payments = (currentQuote.payments ?? []) + [payment]
+        persistence.saveQuote(currentQuote)
+    }
+
+    /// Bir tahsilat kaydını siler ve teklifi kalıcı olarak kaydeder.
+    func removePayment(_ id: UUID, persistence: PersistenceService) {
+        currentQuote.payments?.removeAll { $0.id == id }
+        persistence.saveQuote(currentQuote)
     }
 
     // MARK: - Kaydetme

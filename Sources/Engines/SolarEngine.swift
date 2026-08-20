@@ -280,4 +280,21 @@ struct SolarEngine {
         let dailyKWh = monthlyKWh / 30.0
         return dailyKWh / (city.peakSunHours * systemEfficiency)
     }
+
+    // MARK: Kredi / Finansman
+
+    /// Standart anüite formülüyle aylık taksit tutarını hesaplar.
+    /// A = P × r(1+r)^n / ((1+r)^n − 1)
+    /// - Parameters:
+    ///   - principalTL: Kredi anaparası (TL) — genellikle toplam yatırımdan peşinat düşülmüş tutar
+    ///   - monthlyRatePercent: Aylık faiz oranı (%) — 0 ise anapara vade sayısına eşit bölünür
+    ///   - months: Vade (ay)
+    /// - Returns: Aylık taksit tutarı (TL)
+    static func loanInstallment(principalTL: Double, monthlyRatePercent: Double, months: Int) -> Double {
+        guard months > 0, principalTL > 0 else { return 0 }
+        guard monthlyRatePercent > 0 else { return principalTL / Double(months) }
+        let r = monthlyRatePercent / 100.0
+        let factor = pow(1 + r, Double(months))
+        return principalTL * r * factor / (factor - 1)
+    }
 }

@@ -15,6 +15,32 @@ private struct SolarHistoryEntry: Codable, Identifiable {
     let input: SolarCalculationInput
 }
 
+// MARK: - Malzeme Kataloğu Seçim Hedefi
+
+/// Malzeme listesindeki hangi fiyat alanının kataloğdan doldurulacağını belirtir.
+private enum SolarPriceTarget: Int, Identifiable {
+    case panel, inverter, battery
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .panel:    return "Panel Seç"
+        case .inverter: return "İnverter Seç"
+        case .battery:  return "Batarya Seç"
+        }
+    }
+
+    /// Material.name içinde aranacak anahtar kelimeler (küçük/büyük harf duyarsız)
+    var keywords: [String] {
+        switch self {
+        case .panel:    return ["panel"]
+        case .inverter: return ["inverter", "invertör"]
+        case .battery:  return ["batarya"]
+        }
+    }
+}
+
 // MARK: - SolarCalculatorView
 
 /// Solar enerji hesaplama ana ekranı.
@@ -49,6 +75,14 @@ struct SolarCalculatorView: View {
     @State private var priceJunctionBox : Double = 550      // junction box / DC combiner (adet)
     @State private var priceLabor       : Double = 0        // kurulum işçiliği (toplam tutar, sahada gir)
 
+    // MARK: State — Malzeme Kataloğundan Seçim
+    @State private var pickingTarget: SolarPriceTarget? = nil
+
+    // MARK: State — Kredi/Finansman Senaryosu
+    @State private var financeDownPaymentPercent : Double = 30    // peşinat (%)
+    @State private var financeMonths              : Int    = 12    // vade (ay)
+    @State private var financeMonthlyRatePercent  : Double = 3.5   // aylık faiz (%)
+
     // Amber-Solar renk sistemi
     private let sunGold   = Color(red: 1.0,  green: 0.80, blue: 0.10)
     private let sunOrange = Color(red: 1.0,  green: 0.55, blue: 0.10)
@@ -78,10 +112,11 @@ struct SolarCalculatorView: View {
                     // Sonuçlar (hesaplandıktan sonra görünür)
                     if let result = vm.result, vm.showResult {
                         resultTabs(result: result)
+                        financingCard(result: result)
                         solarMaterialListSection(result: result)
 
                         Button(action: {
-                            pendingQuoteItems = QuoteEngine.itemsFromSolar(result, input: vm.input)
+                            pendingQuoteItems = buildQuoteItemsFromMaterialList(result: result)
                             showCustomerPicker = true
                         }) {
                             Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
@@ -108,6 +143,9 @@ struct SolarCalculatorView: View {
         .onAppear { loadSolarHistory() }
         .sheet(isPresented: $showCityPicker) {
             CityPickerSheet(selectedCity: $vm.input.city, searchText: $vm.citySearchText)
+        }
+        .sheet(item: $pickingTarget) { target in
+            solarMaterialPickerSheet(target: target)
         }
         .alert("Teklif'e Eklendi", isPresented: $showQuoteAlert) {
             Button("Tamam", role: .cancel) {}
@@ -715,17 +753,238 @@ struct SolarCalculatorView: View {
         .padding(.horizontal, 2)
     }
 
+    // MARK: - Kredi / Finansman Senaryosu
+
+    private func financingCard(result: SolarCalculationResult) -> some View {
+        let principal = max(0.0, result.totalInvestmentTL * (1.0 - financeDownPaymentPercent / 100.0))
+        let installment = SolarEngine.loanInstallment(
+            principalTL: principal,
+            monthlyRatePercent: financeMonthlyRatePercent,
+            months: financeMonths
+        )
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "creditcard.fill").foregroundColor(sunGold)
+                Text("Kredi / Finansman Senaryosu")
+                    .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.white)
+            }
+
+            HStack(spacing: 10) {
+                financeField(label: "Peşinat %", value: $financeDownPaymentPercent)
+                financeField(label: "Vade (ay)", value: Binding(
+                    get: { Double(financeMonths) },
+                    set: { financeMonths = max(1, Int($0)) }
+                ))
+                financeField(label: "Aylık Faiz %", value: $financeMonthlyRatePercent)
+            }
+
+            Divider().background(sunGold.opacity(0.3))
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AYLIK TAKSİT")
+                        .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(.gray)
+                    Text("Anapara: \(formatTL(principal)) · \(financeMonths) ay")
+                        .font(.system(size: 10)).foregroundColor(.gray.opacity(0.7))
+                }
+                Spacer()
+                Text(formatTL(installment))
+                    .font(.system(size: 20, weight: .black, design: .rounded)).foregroundColor(sunGold)
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial)
+        .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(sunGold.opacity(0.2), lineWidth: 1))
+        .padding(.horizontal, 2)
+    }
+
+    private func financeField(label: String, value: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(.gray.opacity(0.6))
+            TextField("0", value: value, format: .number)
+                .keyboardType(.decimalPad)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Malzeme Kataloğundan Seçim
+
+    private func solarCatalogPickButton(target: SolarPriceTarget) -> some View {
+        Button { pickingTarget = target } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "shippingbox.fill").font(.system(size: 9))
+                Text("Katalogdan Seç")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+            }
+            .foregroundColor(sunGold.opacity(0.8))
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+    }
+
+    private func solarMaterialPickerSheet(target: SolarPriceTarget) -> some View {
+        let candidates = persistence.materials.filter { material in
+            material.category == .solar &&
+            target.keywords.contains { material.name.localizedCaseInsensitiveContains($0) }
+        }
+
+        return NavigationStack {
+            List {
+                if candidates.isEmpty {
+                    Text("Kategoride uygun malzeme bulunamadı. Malzeme Listesi ekranından ekleyebilirsiniz.")
+                        .font(.system(size: 13))
+                        .foregroundColor(.gray)
+                } else {
+                    ForEach(candidates) { material in
+                        Button {
+                            applyMaterialPrice(material, to: target)
+                            pickingTarget = nil
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(material.name)
+                                    .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                HStack {
+                                    if let brand = material.brand {
+                                        Text(brand).font(.system(size: 11)).foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    Text(formatTL(material.salePrice))
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundColor(sunGold)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle(target.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Kapat") { pickingTarget = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func applyMaterialPrice(_ material: Material, to target: SolarPriceTarget) {
+        switch target {
+        case .panel:    pricePanel    = material.salePrice
+        case .inverter: priceInverter = material.salePrice
+        case .battery:  priceBattery  = material.salePrice
+        }
+    }
+
     // MARK: - Malzeme Listesi
 
+    /// Malzeme listesi ekranı ile teklife eklenen kalemlerin AYNI miktarları kullanmasını sağlayan
+    /// tek doğruluk kaynağı — burada değişen bir hesap iki yerde de otomatik güncellenir.
+    private func solarMaterialQuantities(result: SolarCalculationResult) -> (
+        derivedCount: Int, panelQty: Double, batQty: Double,
+        dcCableM: Double, hookQty: Double, fuseQty: Double, jboxQty: Double
+    ) {
+        let effectiveWp  = max(1.0, panelWp)
+        let derivedCount = max(1, Int(ceil(result.requiredCapacityKWp * 1000.0 / effectiveWp)))
+        let panelQty = Double(derivedCount)
+        let batQty   = Double(result.batteryCount)
+        let dcCableM = panelQty * 10                    // panel başına ~10m DC kablo
+        let hookQty  = panelQty * 4                      // panel başına 4 kanca
+        let fuseQty  = Double(max(1, Int(ceil(Double(derivedCount) / 8.0))))  // 8 panel = 1 string = 1 sigorta
+        let jboxQty  = Double(max(1, Int(ceil(panelQty / 8))))
+        return (derivedCount, panelQty, batQty, dcCableM, hookQty, fuseQty, jboxQty)
+    }
+
+    /// Malzeme listesindeki güncel (kullanıcının sahada düzenlediği) miktar ve birim fiyatlardan
+    /// teklif kalemleri üretir — "Teklif'e Ekle" ekrandaki listeyle birebir aynı rakamları göndersin diye.
+    private func buildQuoteItemsFromMaterialList(result: SolarCalculationResult) -> [QuoteItem] {
+        let q = solarMaterialQuantities(result: result)
+        var items: [QuoteItem] = []
+
+        items.append(QuoteItem(
+            title: "Güneş Paneli (\(Int(panelWp))Wp Monokristalin)",
+            category: .material, quantity: q.panelQty, unit: "adet",
+            unitPrice: pricePanel, vatRate: 0.10
+        ))
+        items.append(QuoteItem(
+            title: "İnverter (\(String(format: "%.1f", result.inverterKW)) kW)",
+            category: .equipment, quantity: 1, unit: "adet",
+            unitPrice: priceInverter, vatRate: 0.10
+        ))
+        if result.batteryCount > 0 {
+            items.append(QuoteItem(
+                title: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
+                category: .material, quantity: q.batQty, unit: "adet",
+                unitPrice: priceBattery, vatRate: 0.10
+            ))
+            items.append(QuoteItem(
+                title: "MPPT Şarj Regülatörü \(String(format: "%.0f", result.chargeCurrentA))A",
+                category: .equipment, quantity: 1, unit: "adet",
+                unitPrice: priceMPPT, vatRate: 0.10
+            ))
+        }
+        items.append(QuoteItem(
+            title: "Montaj Sacı + Alüminyum Ray",
+            category: .material, quantity: q.panelQty, unit: "set",
+            unitPrice: priceMountRail, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "DC Solar Kablo (PV1-F 4mm²)",
+            category: .material, quantity: q.dcCableM, unit: "m",
+            unitPrice: priceDCCable, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "AC Kablo (NYY 3×4mm²)",
+            category: .material, quantity: acCableLengthM, unit: "m",
+            unitPrice: priceACCable, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "DC String Sigorta + Tutucu",
+            category: .material, quantity: q.fuseQty, unit: "adet",
+            unitPrice: priceFuse, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "Topraklama Seti",
+            category: .material, quantity: 1, unit: "set",
+            unitPrice: priceGrounding, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "Çatı Kancası (Alüminyum)",
+            category: .material, quantity: q.hookQty, unit: "adet",
+            unitPrice: priceRoofHook, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "Junction Box / DC Combiner",
+            category: .material, quantity: q.jboxQty, unit: "adet",
+            unitPrice: priceJunctionBox, vatRate: 0.20
+        ))
+        items.append(QuoteItem(
+            title: "GES Kurulum İşçiliği",
+            category: .labor, quantity: 1, unit: "iş",
+            unitPrice: priceLabor, vatRate: 0.20
+        ))
+        return items
+    }
+
     private func solarMaterialListSection(result: SolarCalculationResult) -> some View {
-        let effectiveWp    = max(1.0, panelWp)
-        let derivedCount   = max(1, Int(ceil(result.requiredCapacityKWp * 1000.0 / effectiveWp)))
-        let panelQty  = Double(derivedCount)
-        let batQty    = Double(result.batteryCount)
-        let dcCableM  = panelQty * 10                    // panel başına ~10m DC kablo
-        let hookQty   = panelQty * 4                     // panel başına 4 kanca
-        let fuseQty   = Double(max(1, Int(ceil(Double(derivedCount) / 8.0))))  // 8 panel = 1 string = 1 sigorta
-        let jboxQty   = Double(max(1, Int(ceil(panelQty / 8))))
+        let q = solarMaterialQuantities(result: result)
+        let derivedCount = q.derivedCount
+        let panelQty  = q.panelQty
+        let batQty    = q.batQty
+        let dcCableM  = q.dcCableM
+        let hookQty   = q.hookQty
+        let fuseQty   = q.fuseQty
+        let jboxQty   = q.jboxQty
 
         let grandTotal = panelQty  * pricePanel
                        + 1         * priceInverter
@@ -793,15 +1052,18 @@ struct SolarCalculatorView: View {
             Divider().background(Color.white.opacity(0.1)).padding(.bottom, 6)
 
             // Malzeme satırları
+            solarCatalogPickButton(target: .panel)
             materialPriceRow(
                 name: "Güneş Paneli (\(Int(panelWp))Wp Monokristalin)",
                 qty: panelQty, unit: "adet", price: $pricePanel
             )
+            solarCatalogPickButton(target: .inverter)
             materialPriceRow(
                 name: "İnverter (\(String(format: "%.1f", result.inverterKW)) kW)",
                 qty: 1, unit: "adet", price: $priceInverter
             )
             if result.batteryCount > 0 {
+                solarCatalogPickButton(target: .battery)
                 materialPriceRow(
                     name: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
                     qty: batQty, unit: "adet", price: $priceBattery

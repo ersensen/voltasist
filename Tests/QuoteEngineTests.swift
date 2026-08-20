@@ -1,4 +1,4 @@
-﻿// QuoteEngineTests.swift
+// QuoteEngineTests.swift
 // VoltAsist — Birim Testleri
 //
 // QuoteEngine teklif toplam hesabı, iskonto uygulaması ve numara formatını doğrular.
@@ -17,19 +17,21 @@ final class QuoteEngineTests: XCTestCase {
     /// Test için standart AppSettings oluşturur.
     private func makeSettings(quoteNumber: Int = 1) -> AppSettings {
         var s = AppSettings.defaultSettings
-        s.companyName       = "Test Firma A.Ş."
-        s.companyAddress    = "Test Caddesi No:1, İstanbul"
-        s.phone             = "0212 555 00 00"
-        s.email             = "info@testfirma.com"
-        s.taxNumber         = "1234567890"
-        s.taxOffice         = "Kadıköy VD"
-        s.defaultVATRate    = 20.0
-        s.defaultValidityDays = 30
-        s.nextQuoteNumber   = quoteNumber
+        s.companyName        = "Test Firma A.Ş."
+        s.address             = "Test Caddesi No:1, İstanbul"   // companyAddress salt-okunur alias'tır (address'i döndürür)
+        s.phone               = "0212 555 00 00"
+        s.email               = "info@testfirma.com"
+        s.taxNumber           = "1234567890"
+        s.taxOffice            = "Kadıköy VD"
+        s.defaultVatRate       = 0.20   // 0.20 = %20 (AppSettings fraksiyon olarak saklar)
+        s.quoteValidityDays    = 30
+        s.nextQuoteNumber      = quoteNumber
         return s
     }
 
     /// Birim fiyat ve KDV ile basit bir QuoteItem oluşturur.
+    /// - Not: `vatRate` burada yüzde (ör. 20.0) olarak verilir; QuoteItem'ın
+    ///   `description:` init'i >1 olan değerleri otomatik /100 normalize eder.
     private func makeItem(description: String,
                           unitPrice: Double,
                           quantity: Double = 1.0,
@@ -40,14 +42,14 @@ final class QuoteEngineTests: XCTestCase {
             quantity: quantity,
             unitPrice: unitPrice,
             vatRate: vatRate,
-            category: .cableWiring
+            category: .material
         )
     }
 
     // MARK: - Test 1: 3 Kalem × KDV%20 → Doğru Toplam
 
     /// 3 kalem: 1000 TL + 2000 TL + 500 TL = 3500 TL ara toplam
-    /// KDV%20 → 700 TL KDV → Genel Toplam = 4200 TL
+    /// KDV%20 → 700 TL KDV → Genel Toplam (grandTotal = subtotal + totalVAT) = 4200 TL
     func test_threeItems_VAT20_shouldReturnCorrectGrandTotal() {
         // Given
         let settings = makeSettings()
@@ -74,9 +76,12 @@ final class QuoteEngineTests: XCTestCase {
 
     // MARK: - Test 2: İskonto Uygulanmış Teklif Toplamı
 
-    /// Ara toplam 10.000 TL, %10 iskonto = 1000 TL, KDV matrahı = 9000 TL
-    /// KDV%18 → 1620 TL → Genel Toplam = 10.620 TL
-    func test_discountedQuote_10Percent_shouldReduceGrandTotal() {
+    /// Ara toplam 10.000 TL, KDV%18 → totalVAT = 1.800 TL → grandTotal (iskontosuz) = 11.800 TL
+    /// %10 genel iskonto (discountPercent) uygulanınca:
+    /// grandTotalAfterDiscount = grandTotal × (1 - 0.10) = 11.800 × 0.9 = 10.620 TL
+    /// (Not: subtotal × (1-iskonto) × (1+KDV) ile grandTotal × (1-iskonto) matematiksel olarak
+    /// aynı sonucu verir — çarpma işleminin değişme özelliği nedeniyle her iki sıralama da 10.620 TL'ye ulaşır.)
+    func test_discountedQuote_10Percent_shouldReduceGrandTotalAfterDiscount() {
         // Given
         let settings = makeSettings()
         let items = [
@@ -84,33 +89,33 @@ final class QuoteEngineTests: XCTestCase {
             makeItem(description: "İnverter",            unitPrice: 3_000.0, vatRate: 18),
             makeItem(description: "Montaj ve Kablolama", unitPrice: 2_000.0, vatRate: 18)
         ]
-        // Ara toplam = 10.000 TL, %10 iskonto uygulanıyor
+        // Ara toplam = 10.000 TL
 
         // When
         var quote = QuoteEngine.newQuote(customer: nil, settings: settings)
         for item in items { quote.items.append(item) }
-        quote.discountRate = 10.0  // %10 iskonto
+        quote.discountPercent = 10.0  // %10 genel iskonto (discountRate salt-okunur alias'tır, ayarlanamaz)
 
         // Then
-        // Subtotal = 10.000, iskonto = 1.000, KDV matrahı = 9.000
-        // KDV@18% = 9000 × 0.18 = 1.620 → Toplam = 10.620 TL
-        let subtotal   = 10_000.0
-        let discount   = subtotal * 0.10          // 1.000
-        let vatBase    = subtotal - discount       // 9.000
-        let vat        = vatBase * 0.18           // 1.620
-        let expected   = vatBase + vat            // 10.620
+        let subtotal          = 10_000.0
+        let vat                = subtotal * 0.18                 // 1.800 TL
+        let expectedGrandTotal = subtotal + vat                    // 11.800 TL (iskontosuz)
+        let expectedAfterDiscount = expectedGrandTotal * (1.0 - 0.10)  // 10.620 TL
 
-        XCTAssertEqual(quote.grandTotal, expected, accuracy: 0.01,
+        XCTAssertEqual(quote.grandTotal, expectedGrandTotal, accuracy: 0.01,
+            "İskonto uygulanmadan önce genel toplam 11.800 TL (±0.01) olmalıdır.")
+        XCTAssertEqual(quote.grandTotalAfterDiscount, expectedAfterDiscount, accuracy: 0.01,
             "%10 iskonto sonrası genel toplam 10.620 TL (±0.01) olmalıdır.")
-        XCTAssertLessThan(quote.grandTotal, 12_000.0,
+        XCTAssertLessThan(quote.grandTotalAfterDiscount, 12_000.0,
             "İskontolu teklif 12.000 TL'den küçük olmalıdır.")
     }
 
-    // MARK: - Test 3: Teklif Numarası Formatı — "VA-2024-001"
+    // MARK: - Test 3: Teklif Numarası Formatı — "{prefix}-{yıl}-{sıra}"
 
-    /// Teklif numarası "VA-YYYY-NNN" formatında üretilmelidir.
+    /// Teklif numarası "{quotePrefix}-YYYY-NNN" formatında üretilmelidir.
+    /// AppSettings.defaultSettings.quotePrefix gerçek değeri "VU"'dur (bkz. AppSettings.swift satır 147/179) — "VA" değil.
     /// Yıl güncel yıl, numara settings.nextQuoteNumber'dan gelmeli ve 3 hane sıfır dolgusu olmalı.
-    func test_quoteNumber_shouldFollowVUFormat() {
+    func test_quoteNumber_shouldFollowPrefixYearSequenceFormat() {
         // Given
         var settings = makeSettings(quoteNumber: 1)
         settings.nextQuoteNumber = 1
@@ -120,7 +125,7 @@ final class QuoteEngineTests: XCTestCase {
 
         // Then
         let currentYear = Calendar.current.component(.year, from: Date())
-        let expectedPrefix = "VA-\(currentYear)-"
+        let expectedPrefix = "\(settings.quotePrefix)-\(currentYear)-"
 
         XCTAssertTrue(quote.quoteNumber.hasPrefix(expectedPrefix),
             "Teklif numarası '\(expectedPrefix)' ile başlamalıdır. Bulunan: \(quote.quoteNumber)")
@@ -179,7 +184,7 @@ final class QuoteEngineTests: XCTestCase {
 
     // MARK: - Test 6: Çok Adetli Kalem Toplam Hesabı
 
-    /// 5 adet × 750 TL = 3750 TL ara toplam → KDV%20 = 750 TL → Toplam 4500 TL
+    /// 5 adet × 750 TL = 3750 TL ara toplam (netPrice) → KDV%20 = 750 TL (vatAmount) → grandTotal 4500 TL
     func test_multipleQuantity_shouldMultiplyUnitPriceCorrectly() {
         // Given
         let settings = makeSettings()
@@ -193,5 +198,55 @@ final class QuoteEngineTests: XCTestCase {
         let expected = 750.0 * 5.0 * 1.20   // 4500 TL
         XCTAssertEqual(quote.grandTotal, expected, accuracy: 0.01,
             "5 adet × 750 TL × 1.20 KDV = 4500 TL olmalıdır.")
+    }
+
+    // MARK: - Test 7: Kısmi Tahsilat — Kalan Bakiye Hesabı
+
+    /// 1000 TL × KDV%20 = 1200 TL grandTotal (iskonto yok, grandTotalAfterDiscount = grandTotal).
+    /// 500 + 300 = 800 TL tahsil edilirse kalan bakiye 1200 - 800 = 400 TL olmalı, tam ödenmemiş sayılmalı.
+    func test_partialPayments_shouldComputeCorrectRemainingBalance() {
+        // Given
+        let settings = makeSettings()
+        var quote = QuoteEngine.newQuote(customer: nil, settings: settings)
+        quote.items.append(makeItem(description: "Kablo Döşeme", unitPrice: 1_000.0, quantity: 1, vatRate: 20.0))
+
+        // When
+        quote.payments = [
+            QuotePayment(amount: 500.0),
+            QuotePayment(amount: 300.0)
+        ]
+
+        // Then
+        XCTAssertEqual(quote.grandTotalAfterDiscount, 1_200.0, accuracy: 0.01,
+            "İskonto uygulanmadığından grandTotalAfterDiscount, grandTotal ile aynı (1200 TL) olmalıdır.")
+        XCTAssertEqual(quote.totalPaidTL, 800.0, accuracy: 0.01,
+            "Tahsil edilen toplam 500 + 300 = 800 TL olmalıdır.")
+        XCTAssertEqual(quote.remainingBalanceTL, 400.0, accuracy: 0.01,
+            "Kalan bakiye 1200 - 800 = 400 TL olmalıdır.")
+        XCTAssertFalse(quote.isFullyPaid,
+            "Kalan bakiye pozitifken teklif tam ödenmiş sayılmamalıdır.")
+    }
+
+    // MARK: - Test 8: Tam Tahsilat ve Fazla Ödeme — Bakiye Negatife İnmemeli
+
+    /// Tam tutar tahsil edilince kalan bakiye 0 ve isFullyPaid true olmalı.
+    /// Fazladan ödeme yapılsa bile kalan bakiye negatife inmemeli (max(0, ...) ile sınırlı).
+    func test_fullAndOverPayment_shouldMarkAsFullyPaidWithoutNegativeBalance() {
+        // Given
+        let settings = makeSettings()
+        var quote = QuoteEngine.newQuote(customer: nil, settings: settings)
+        quote.items.append(makeItem(description: "İnverter", unitPrice: 1_000.0, quantity: 1, vatRate: 20.0))
+        // grandTotal = 1000 × 1.20 = 1200 TL
+
+        // When — tam tutarın üzerinde ödeme (1200 + 300 fazla)
+        quote.payments = [QuotePayment(amount: 1_500.0)]
+
+        // Then
+        XCTAssertEqual(quote.totalPaidTL, 1_500.0, accuracy: 0.01,
+            "Tahsil edilen toplam, girilen ödeme tutarına eşit (1500 TL) olmalıdır.")
+        XCTAssertEqual(quote.remainingBalanceTL, 0.0, accuracy: 0.01,
+            "Fazla ödeme yapılsa da kalan bakiye negatife inmemeli, 0'da sınırlı kalmalıdır.")
+        XCTAssertTrue(quote.isFullyPaid,
+            "Tahsilat, genel toplamı karşılayıp aştığında teklif tam ödenmiş sayılmalıdır.")
     }
 }

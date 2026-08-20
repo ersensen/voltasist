@@ -110,26 +110,16 @@ struct SolarCalculatorView: View {
                     calculateButton
 
                     // Sonuçlar (hesaplandıktan sonra görünür)
+                    // Tek bir alt view fonksiyonuna toplanıyor — aksi halde bu koşullu blokta
+                    // art arda birden çok view (+ önceden burada zaten var olan resultTabs/
+                    // solarMaterialListSection'a bu oturumda financingCard eklenince) ViewBuilder'ın
+                    // ürettiği tip o kadar derinleşiyor ki çalışma zamanında Swift'in tip metadata
+                    // çözümleyicisi (demangler) stack taşması ile çöküyordu (EXC_BAD_ACCESS,
+                    // "stack guard region" — Solar sekmesine her girişte tekrarlanan gerçek çökme).
+                    // CompensationCalculatorView'da derleme zamanında yaşanan aynı kök nedenin
+                    // (çok büyük/iç içe tek bir view body) burada çalışma zamanı karşılığıydı.
                     if let result = vm.result, vm.showResult {
-                        resultTabs(result: result)
-                        financingCard(result: result)
-                        solarMaterialListSection(result: result)
-
-                        Button(action: {
-                            pendingQuoteItems = buildQuoteItemsFromMaterialList(result: result)
-                            showCustomerPicker = true
-                        }) {
-                            Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(
-                                    LinearGradient(colors: [sunGold, sunOrange], startPoint: .leading, endPoint: .trailing)
-                                )
-                                .cornerRadius(14)
-                                .shadow(color: sunGold.opacity(0.35), radius: 6, y: 3)
-                        }
+                        solarResultsSection(result: result)
                     }
 
                     Spacer(minLength: 30)
@@ -159,6 +149,35 @@ struct SolarCalculatorView: View {
                 showQuoteAlert = true
             }
             .environmentObject(persistence)
+        }
+    }
+
+    // MARK: - Sonuç Bölümü (tek view fonksiyonuna toplanmış — bkz. body içindeki not)
+
+    private func solarResultsSection(result: SolarCalculationResult) -> some View {
+        VStack(spacing: 20) {
+            resultTabs(result: result)
+            financingCard(result: result)
+            solarMaterialListSection(result: result)
+            addToQuoteButton(result: result)
+        }
+    }
+
+    private func addToQuoteButton(result: SolarCalculationResult) -> some View {
+        Button(action: {
+            pendingQuoteItems = buildQuoteItemsFromMaterialList(result: result)
+            showCustomerPicker = true
+        }) {
+            Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(colors: [sunGold, sunOrange], startPoint: .leading, endPoint: .trailing)
+                )
+                .cornerRadius(14)
+                .shadow(color: sunGold.opacity(0.35), radius: 6, y: 3)
         }
     }
 
@@ -878,6 +897,40 @@ struct SolarCalculatorView: View {
         .presentationDetents([.medium, .large])
     }
 
+    private func panelMaterialRow(panelQty: Double) -> some View {
+        VStack(spacing: 0) {
+            solarCatalogPickButton(target: .panel)
+            materialPriceRow(
+                name: "Güneş Paneli (\(Int(panelWp))Wp Monokristalin)",
+                qty: panelQty, unit: "adet", price: $pricePanel
+            )
+        }
+    }
+
+    private func inverterMaterialRow(result: SolarCalculationResult) -> some View {
+        VStack(spacing: 0) {
+            solarCatalogPickButton(target: .inverter)
+            materialPriceRow(
+                name: "İnverter (\(String(format: "%.1f", result.inverterKW)) kW)",
+                qty: 1, unit: "adet", price: $priceInverter
+            )
+        }
+    }
+
+    private func batteryMaterialRows(result: SolarCalculationResult, batQty: Double) -> some View {
+        VStack(spacing: 0) {
+            solarCatalogPickButton(target: .battery)
+            materialPriceRow(
+                name: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
+                qty: batQty, unit: "adet", price: $priceBattery
+            )
+            materialPriceRow(
+                name: "MPPT Şarj Regülatörü \(String(format: "%.0f", result.chargeCurrentA))A",
+                qty: 1, unit: "adet", price: $priceMPPT
+            )
+        }
+    }
+
     private func applyMaterialPrice(_ material: Material, to target: SolarPriceTarget) {
         switch target {
         case .panel:    pricePanel    = material.salePrice
@@ -1051,27 +1104,13 @@ struct SolarCalculatorView: View {
 
             Divider().background(Color.white.opacity(0.1)).padding(.bottom, 6)
 
-            // Malzeme satırları
-            solarCatalogPickButton(target: .panel)
-            materialPriceRow(
-                name: "Güneş Paneli (\(Int(panelWp))Wp Monokristalin)",
-                qty: panelQty, unit: "adet", price: $pricePanel
-            )
-            solarCatalogPickButton(target: .inverter)
-            materialPriceRow(
-                name: "İnverter (\(String(format: "%.1f", result.inverterKW)) kW)",
-                qty: 1, unit: "adet", price: $priceInverter
-            )
+            // Malzeme satırları — panel/inverter/batarya grupları tek view fonksiyonuna
+            // toplandı (bkz. solarResultsSection'daki not — aynı gerekçe: koşullu blokta çok
+            // sayıda kardeş view, çalışma zamanında tip çözümleme çökmesine yol açabiliyor)
+            panelMaterialRow(panelQty: panelQty)
+            inverterMaterialRow(result: result)
             if result.batteryCount > 0 {
-                solarCatalogPickButton(target: .battery)
-                materialPriceRow(
-                    name: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
-                    qty: batQty, unit: "adet", price: $priceBattery
-                )
-                materialPriceRow(
-                    name: "MPPT Şarj Regülatörü \(String(format: "%.0f", result.chargeCurrentA))A",
-                    qty: 1, unit: "adet", price: $priceMPPT
-                )
+                batteryMaterialRows(result: result, batQty: batQty)
             }
             materialPriceRow(
                 name: "Montaj Sacı + Alüminyum Ray",

@@ -154,13 +154,23 @@ struct SolarCalculatorView: View {
 
     // MARK: - Sonuç Bölümü (tek view fonksiyonuna toplanmış — bkz. body içindeki not)
 
-    private func solarResultsSection(result: SolarCalculationResult) -> some View {
-        VStack(spacing: 20) {
-            resultTabs(result: result)
-            financingCard(result: result)
-            solarMaterialListSection(result: result)
-            addToQuoteButton(result: result)
-        }
+    // AnyView ile tip-siliyoruz (type erasure) — CANLI ÇÖKME KANITI: build 32/33'te bu blok
+    // "Hesapla"ya basılıp ilk kez gerçekten oluşturulduğunda EXC_BAD_ACCESS ile çöküyordu
+    // (stack guard bölgesinde SIGSEGV, Swift'in swift_getTypeByMangledName* demangler'ı iç içe
+    // "some View" zincirini — TabView+Charts+onlarca resultMetric()/materialPriceRow() — çözerken
+    // stack taşırıyordu). Sadece alt fonksiyona bölmek yetmedi çünkü tip karmaşıklığı fonksiyonun
+    // İÇİNDE duruyordu, dışına taşınmamıştı. AnyView burada zinciri gerçekten kırıyor: içindeki
+    // view'lar çalışma zamanında sabit boyutlu bir kutuya (existential) alınıyor, demangler'ın
+    // derin genel (generic) tipi yeniden inşa etmesine hiç gerek kalmıyor.
+    private func solarResultsSection(result: SolarCalculationResult) -> AnyView {
+        AnyView(
+            VStack(spacing: 20) {
+                AnyView(resultTabs(result: result))
+                AnyView(financingCard(result: result))
+                AnyView(solarMaterialListSection(result: result))
+                AnyView(addToQuoteButton(result: result))
+            }
+        )
     }
 
     private func addToQuoteButton(result: SolarCalculationResult) -> some View {
@@ -596,16 +606,19 @@ struct SolarCalculatorView: View {
 
     @ViewBuilder
     private func resultTabs(result: SolarCalculationResult) -> some View {
+        // AnyView ile her sekme ayrı tip-silinmiş — Charts+TabView.page kombinasyonu tek başına
+        // zaten en derin zincirdi (bkz. solarResultsSection'daki çökme notu), sekme başına kırmak
+        // demangler'ın çözmesi gereken tek bir dev tipi 4 küçük, sabit tipe böler.
         TabView {
-            panelResultView(result)
+            AnyView(panelResultView(result))
                 .tabItem { Label("Panel", systemImage: "square.grid.3x3.fill") }
             if vm.input.systemType != .onGrid {
-                batteryResultView(result)
+                AnyView(batteryResultView(result))
                     .tabItem { Label("Batarya", systemImage: "battery.100") }
             }
-            economyResultView(result)
+            AnyView(economyResultView(result))
                 .tabItem { Label("Ekonomi", systemImage: "chart.line.uptrend.xyaxis") }
-            co2ResultView(result)
+            AnyView(co2ResultView(result))
                 .tabItem { Label("Çevre", systemImage: "leaf.fill") }
         }
         .frame(height: 420)

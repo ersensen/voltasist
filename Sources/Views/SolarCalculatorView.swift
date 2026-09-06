@@ -946,9 +946,9 @@ struct SolarCalculatorView: View {
 
     private func applyMaterialPrice(_ material: Material, to target: SolarPriceTarget) {
         switch target {
-        case .panel:    pricePanel    = material.salePrice
-        case .inverter: priceInverter = material.salePrice
-        case .battery:  priceBattery  = material.salePrice
+        case .panel:    pricePanel    = material.salePrice * 1.10
+        case .inverter: priceInverter = material.salePrice * 1.10
+        case .battery:  priceBattery  = material.salePrice * 1.10
         }
     }
 
@@ -980,64 +980,64 @@ struct SolarCalculatorView: View {
         items.append(QuoteItem(
             title: "Güneş Paneli (\(Int(panelWp))Wp Monokristalin)",
             category: .material, quantity: q.panelQty, unit: "adet",
-            unitPrice: pricePanel, vatRate: 0.10
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: pricePanel, vatRate: 0.10), vatRate: 0.10
         ))
         items.append(QuoteItem(
             title: "İnverter (\(String(format: "%.1f", result.inverterKW)) kW)",
             category: .equipment, quantity: 1, unit: "adet",
-            unitPrice: priceInverter, vatRate: 0.10
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceInverter, vatRate: 0.10), vatRate: 0.10
         ))
         if result.batteryCount > 0 {
             items.append(QuoteItem(
                 title: "Batarya 100Ah/12V — \(vm.input.batteryType.rawValue)",
                 category: .material, quantity: q.batQty, unit: "adet",
-                unitPrice: priceBattery, vatRate: 0.10
+                unitPrice: QuoteItem.netUnitPrice(includingVAT: priceBattery, vatRate: 0.10), vatRate: 0.10
             ))
             items.append(QuoteItem(
                 title: "MPPT Şarj Regülatörü \(String(format: "%.0f", result.chargeCurrentA))A",
                 category: .equipment, quantity: 1, unit: "adet",
-                unitPrice: priceMPPT, vatRate: 0.10
+                unitPrice: QuoteItem.netUnitPrice(includingVAT: priceMPPT, vatRate: 0.10), vatRate: 0.10
             ))
         }
         items.append(QuoteItem(
             title: "Montaj Sacı + Alüminyum Ray",
             category: .material, quantity: q.panelQty, unit: "set",
-            unitPrice: priceMountRail, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceMountRail, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "DC Solar Kablo (PV1-F 4mm²)",
             category: .material, quantity: q.dcCableM, unit: "m",
-            unitPrice: priceDCCable, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceDCCable, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "AC Kablo (NYY 3×4mm²)",
             category: .material, quantity: acCableLengthM, unit: "m",
-            unitPrice: priceACCable, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceACCable, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "DC String Sigorta + Tutucu",
             category: .material, quantity: q.fuseQty, unit: "adet",
-            unitPrice: priceFuse, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceFuse, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "Topraklama Seti",
             category: .material, quantity: 1, unit: "set",
-            unitPrice: priceGrounding, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceGrounding, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "Çatı Kancası (Alüminyum)",
             category: .material, quantity: q.hookQty, unit: "adet",
-            unitPrice: priceRoofHook, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceRoofHook, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "Junction Box / DC Combiner",
             category: .material, quantity: q.jboxQty, unit: "adet",
-            unitPrice: priceJunctionBox, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceJunctionBox, vatRate: 0.20), vatRate: 0.20
         ))
         items.append(QuoteItem(
             title: "GES Kurulum İşçiliği",
             category: .labor, quantity: 1, unit: "iş",
-            unitPrice: priceLabor, vatRate: 0.20
+            unitPrice: QuoteItem.netUnitPrice(includingVAT: priceLabor, vatRate: 0.20), vatRate: 0.20
         ))
         return items
     }

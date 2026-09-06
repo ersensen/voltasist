@@ -134,7 +134,11 @@ final class QuoteViewModel: ObservableObject {
 
     /// Yeni bir saha fotoğrafı ekler ve teklifi kalıcı olarak kaydeder.
     func addPhoto(_ image: UIImage, persistence: PersistenceService) {
-        guard let id = PhotoStorageService.save(image: image, entityID: currentQuote.id) else { return }
+        guard let id = PhotoStorageService.save(image: image, entityID: currentQuote.id) else {
+            alertMessage = "Fotoğraf kaydedilemedi. Depolama alanını kontrol edip tekrar deneyin."
+            showAlert = true
+            return
+        }
         currentQuote.photoIDs = (currentQuote.photoIDs ?? []) + [id]
         persistence.saveQuote(currentQuote)
     }

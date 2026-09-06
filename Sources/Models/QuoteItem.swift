@@ -37,6 +37,12 @@ enum QuoteItemCategory: String, Codable, CaseIterable, Identifiable {
 
 /// Teklifte yer alan tek bir kalem (satır)
 struct QuoteItem: Codable, Identifiable {
+
+    /// Converts an inclusive price to the net price used by quote calculations.
+    static func netUnitPrice(includingVAT price: Double, vatRate: Double) -> Double {
+        price / (1 + vatRate)
+    }
+
     /// Benzersiz kimlik
     var id: UUID
 

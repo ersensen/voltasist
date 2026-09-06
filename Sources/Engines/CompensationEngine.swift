@@ -75,43 +75,48 @@ struct CompensationEngine {
 
     // MARK: - Standart Kademe Seçimi
 
-    /// Toplam gerekli kVAr için eşit büyüklükte kademelerden oluşan bir AKP kombinasyonu seçer.
-    ///
-    /// Önceki sürüm büyükten küçüğe açgözlü (greedy) seçim yapıyordu; bu, hedefi yukarı
-    /// yuvarlamayabiliyordu (0.5 kVAr'a kadar eksik kurulum — ceza tam sıfırlanmayabiliyordu) ve
-    /// tek bir dev kademe + küçük bir "kırıntı" kademe üretiyordu (örn. 125 kVAr → 100+25, aradaki
-    /// 75 kVAr'lık aralıkta hiçbir ayar noktası yok). Sahada bunun iki sonucu oluyordu: (1) yük
-    /// dalgalanınca sistem ya ceza sınırının altına inemiyor ya da aşırı kompanzasyona sıçrıyor,
-    /// (2) en büyük kademenin kontaktörü tüm anahtarlamayı tek başına taşıyıp erken yıpranıyor.
-    ///
-    /// Bu sürüm hedefi eşit büyüklükte N kademeye bölüp en yakın standart değere yukarı yuvarlıyor:
-    /// hem hedefi asla eksik bırakmıyor (ceil ile) hem de kademeler arası boşluğu küçültüyor hem de
-    /// kontaktör aşınmasını kademeler arasında dengeliyor (gerçek AKP kontrolörlerinin eşit
-    /// kademelerde yaptığı "kademe rotasyonu" ile aşınma dengelemesini mümkün kılıyor).
-    /// - Parameter totalQcKVAr: Gerekli toplam kompanzasyon gücü (kVAr)
-    /// - Returns: Seçilen kondansatör kademeleri (tek rating, dengeli adet)
-    static func selectCapacitorSteps(totalQcKVAr: Double) -> [CapacitorStep] {
-        guard totalQcKVAr > 0 else { return [] }
-
-        // Hedef kademe sayısı — büyük ihtiyaçlarda daha fazla, ince ayarlı kademe;
-        // küçük ihtiyaçlarda tek/az kademe (sabit kondansatör de olabilir) yeterli.
-        let targetStepCount: Int
-        switch totalQcKVAr {
-        case ..<10:     targetStepCount = 1
-        case 10..<25:   targetStepCount = 2
-        case 25..<60:   targetStepCount = 3
-        case 60..<120:  targetStepCount = 4
-        case 120..<250: targetStepCount = 6
-        default:        targetStepCount = 8
+    /// Evaluates equal and progressive catalog plans within the relay output limit.
+    /// Prefer coverage of the target, then smaller reachable gaps, then fewer outputs.
+    /// This is a balanced three-phase preliminary plan, not phase-by-phase sizing.
+    static func selectCapacitorSteps(totalQcKVAr: Double, maximumSteps: Int = 8) -> [CapacitorStep] {
+        guard totalQcKVAr.isFinite, totalQcKVAr > 0,
+              (1...16).contains(maximumSteps),
+              totalQcKVAr <= Double(maximumSteps) * 100 else { return [] }
+        var best: [Double] = []
+        var bestScore = Double.infinity
+        for count in 1...maximumSteps {
+            for growth in [0, 1, 2, 3] {
+                let weights = (0..<count).map { index -> Double in
+                    if growth == 0 { return 1 }
+                    return pow(2, Double(min(index / growth, 3)))
+                }
+                let unit = totalQcKVAr / weights.reduce(0, +)
+                let candidate = weights.compactMap { weight in
+                    standardStepRatings.first { $0 + 0.000001 >= unit * weight }
+                }
+                guard candidate.count == count else { continue }
+                let total = candidate.reduce(0, +)
+                guard total + 0.000001 >= totalQcKVAr else { continue }
+                let gap = maximumReachableGap(candidate)
+                let score = (total - totalQcKVAr) * 10 + gap + Double(count) * 0.001
+                if score < bestScore {
+                    best = candidate
+                    bestScore = score
+                }
+            }
         }
+        return Dictionary(grouping: best, by: { $0 }).map {
+            CapacitorStep(ratingKVAr: $0.key, quantity: $0.value.count)
+        }.sorted { $0.ratingKVAr < $1.ratingKVAr }
+    }
 
-        let idealStepSize = totalQcKVAr / Double(targetStepCount)
-        let rating = standardStepRatings.first { $0 >= idealStepSize } ?? standardStepRatings.last!
-
-        // Yukarı yuvarlama (ceil) — hedef hiçbir zaman eksik kurulmaz.
-        let quantity = max(1, Int(ceil(totalQcKVAr / rating)))
-
-        return [CapacitorStep(ratingKVAr: rating, quantity: quantity)]
+    static func maximumReachableGap(_ ratings: [Double]) -> Double {
+        var reachable: Set<Double> = [0]
+        for rating in ratings {
+            reachable.formUnion(reachable.map { $0 + rating })
+        }
+        let sorted = reachable.sorted()
+        return zip(sorted, sorted.dropFirst()).map { $1 - $0 }.max() ?? 0
     }
 
     // MARK: - 7.3 AKP Parametreleri
@@ -177,7 +182,7 @@ struct CompensationEngine {
             reactorFactor = 0.0567
         } else if thd < 20.0 {
             // Yüksek harmonik — %7 detuned reaktör zorunlu
-            // Detuning: p = (50/189)² ≈ 0.07 → rezonans frekansı 189 Hz (3. harmonik altı)
+            // Detuning: p = (50/189)² ≈ 0.07 → rezonans frekansı 189 Hz (3. ile 5. harmonik arası)
             risk = .high
             reactorFactor = 0.07
         } else {
@@ -306,11 +311,27 @@ struct CompensationEngine {
     // MARK: - Throws Varyantı (ViewModel Uyumlu)
 
     /// Hesaplamayı yapar; giriş geçersizse CalculationError fırlatır.
-    static func calculate(input: CompensationInput) throws -> CompensationResult {
+    static func calculate(input: CompensationInput, selectedSteps: [CapacitorStep]? = nil) throws -> CompensationResult {
         guard input.isValid else {
             throw CalculationError.invalidInput("Kompanzasyon giriş parametreleri geçersiz.")
         }
-        return _calculate(input: input)
+        if let selectedSteps {
+            guard !selectedSteps.isEmpty,
+                  selectedSteps.allSatisfy({ $0.ratingKVAr.isFinite && $0.ratingKVAr > 0 && (1...16).contains($0.quantity) }),
+                  selectedSteps.reduce(0, { $0 + $1.quantity }) <= 16 else {
+                throw CalculationError.invalidInput("Kademe listesi geçersiz.")
+            }
+            let required = calculateRequiredQc(activePowerKW: input.activePowerKW,
+                currentCosPhi: input.activePowerKW / input.apparentPowerKVA, targetCosPhi: input.targetCosPhi)
+            guard selectedSteps.reduce(0, { $0 + $1.totalKVAr }) + 0.000001 >= required else {
+                throw CalculationError.invalidInput("Seçilen kademeler gerekli kapasiteyi karşılamıyor.")
+            }
+        }
+        let result = _calculate(input: input, selectedSteps: selectedSteps)
+        guard result.requiredQcKVAr <= 0 || !result.selectedSteps.isEmpty else {
+            throw CalculationError.invalidInput("Gerekli kapasite röle/katalog sınırını aşıyor.")
+        }
+        return result
     }
 
     // MARK: - Ana Hesaplama (Private)
@@ -318,7 +339,7 @@ struct CompensationEngine {
     /// Kompanzasyon sisteminin tam analizini gerçekleştir
     /// - Parameter input: Tüm giriş parametreleri
     /// - Returns: Kapsamlı hesaplama sonuçları
-    private static func _calculate(input: CompensationInput) -> CompensationResult {
+    private static func _calculate(input: CompensationInput, selectedSteps: [CapacitorStep]?) -> CompensationResult {
 
         // 1. Mevcut durum
         let currentState = calculateCurrentState(input: input)
@@ -373,7 +394,7 @@ struct CompensationEngine {
         }
 
         // 3. Kademe seçimi
-        let steps = selectCapacitorSteps(totalQcKVAr: requiredQc)
+        let steps = selectedSteps ?? selectCapacitorSteps(totalQcKVAr: requiredQc)
         let totalInstalledKVAr = steps.reduce(0.0) { $0 + $1.totalKVAr }
 
         // Aşırı kurulum kontrolü: minimum standart kademe küçük ihtiyaçlar için orantısız büyük olabilir

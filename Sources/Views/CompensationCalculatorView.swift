@@ -142,6 +142,7 @@ struct CompensationCalculatorView: View {
     @State private var thdText:    String = "10.0"
 
     // Kademe
+    @State private var calculationError: String?
     @State private var stepCountOption: Int = 8
     @State private var editableSteps: [Double] = []
 
@@ -191,10 +192,10 @@ struct CompensationCalculatorView: View {
         .onChange(of: activePowerKW)    { _, _ in recalculate() }
         .onChange(of: apparentPowerKVA) { _, _ in recalculate() }
         .onChange(of: targetCosPhi)     { _, _ in recalculate() }
-        .onChange(of: penaltyRate)      { _, _ in recalculate() }
-        .onChange(of: systemVoltage)    { _, _ in recalculate() }
-        .onChange(of: thdPercent)       { _, _ in recalculate() }
-        .onChange(of: transformerKVA)   { _, _ in recalculate() }
+        .onChange(of: penaltyRate)      { _, _ in recalculate(rebuildSteps: false) }
+        .onChange(of: systemVoltage)    { _, _ in recalculate(rebuildSteps: false) }
+        .onChange(of: thdPercent)       { _, _ in recalculate(rebuildSteps: false) }
+        .onChange(of: transformerKVA)   { _, _ in recalculate(rebuildSteps: false) }
     }
 
     private var bodyWithInputChanges: some View {
@@ -215,6 +216,7 @@ struct CompensationCalculatorView: View {
                 recalculate()
             }
             .onChange(of: stepCountOption) { _, _ in rebuildEditableSteps() }
+            .onChange(of: editableSteps) { _, _ in updateStepWarnings() }
             .alert("Teklif'e Eklendi", isPresented: $showQuoteAdded) {
                 Button("Tamam", role: .cancel) {}
             } message: {
@@ -591,17 +593,20 @@ struct CompensationCalculatorView: View {
     }
 
     private var stepCountPickerCard: some View {
-        let perStep  = computedQcKVAr / Double(max(1, stepCountOption))
-        let std      = nearestStandard(perStep)
-        let total    = std * Double(stepCountOption)
+        let perStep = editableStepsTotal / Double(max(1, editableSteps.count))
+        let std = editableSteps.min() ?? 0
+        let total = editableStepsTotal
         let excess   = total - computedQcKVAr
         let minStep  = computedQcKVAr * 0.05
         let tooSmall = std < minStep && computedQcKVAr > 0
 
         return VStack(spacing: 12) {
+            Text("Ön seçim dengeli üç faz içindir. Monofaze seçim için faz bazlı ölçüm gerekir.")
+                .font(.caption).foregroundStyle(.gray)
+
             HStack {
                 Image(systemName: "square.grid.2x2.fill").foregroundStyle(Color.purple)
-                Text("Kademe Sayısı").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text("Röle Kademe Sınırı").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 Spacer()
                 Text("Önerilen: \(loadProfile.suggestedMinSteps)+")
                     .font(.system(size: 11, design: .rounded)).foregroundStyle(Color.purple.opacity(0.75))
@@ -624,9 +629,9 @@ struct CompensationCalculatorView: View {
             if computedQcKVAr > 0 {
                 VStack(spacing: 6) {
                     HStack {
-                        Text("Kademe başı kVAr:").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
+                        Text("Ortalama / en küçük:").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
                         Spacer()
-                        Text(String(format: "%.1f → standart %.0f kVAr", perStep, std))
+                        Text(String(format: "%.1f / %.1f kVAr", perStep, std))
                             .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     }
                     HStack {
@@ -741,7 +746,7 @@ struct CompensationCalculatorView: View {
             }
             .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
 
-            // Aşırı kurulum uyarısı (yalnızca engine min. kademe nedeniyle oluşuyorsa)
+            // Aşırı kurulum uyarısı (güncel kademe listesi)
             if let warning = engineOversizingWarning {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -794,6 +799,9 @@ struct CompensationCalculatorView: View {
             Button {
                 withAnimation {
                     let newVal = nearestStandard(computedQcKVAr / Double(max(1, editableSteps.count + 1)))
+                    guard editableSteps.count < stepCountOption else {
+                        calculationError = "Rölenin kademe sınırına ulaşıldı."; return
+                    }
                     editableSteps.append(newVal)
                 }
             } label: {
@@ -916,7 +924,7 @@ struct CompensationCalculatorView: View {
     }
 
     private var physicalSpaceCard: some View {
-        let stepCnt  = editableSteps.isEmpty ? stepCountOption : editableSteps.count
+        let stepCnt  = editableSteps.count
         let cabinets = stepCnt > 12 ? 2 : 1
         let width    = min(400 + stepCnt * 200, 2400)
         let cc: Color = cabinets > 1 ? .orange : .green
@@ -1170,10 +1178,10 @@ struct CompensationCalculatorView: View {
 
     private func reactorRowActive(index: Int) -> Bool {
         switch index {
-        case 0: return thdPercent < 5
-        case 1: return thdPercent >= 5  && thdPercent < 8
-        case 2: return thdPercent >= 8  && thdPercent < 20
-        default: return thdPercent >= 20
+        case 0: return currentHarmonics.reactorFactor == 0
+        case 1: return currentHarmonics.reactorFactor == 0.0567
+        case 2: return currentHarmonics.reactorFactor == 0.07
+        default: return currentHarmonics.reactorFactor == 0.14
         }
     }
 
@@ -1223,6 +1231,8 @@ struct CompensationCalculatorView: View {
         let (defCap, defCon, defReactor, defPanel, defLabor) = defaultCosts
         let total = totalInvestment
         return VStack(spacing: 12) {
+            Text("Tutarlar KDV hariçtir; teklifte KDV ayrıca eklenir.")
+                .font(.caption).foregroundStyle(.gray)
             HStack {
                 Image(systemName: "banknote.fill").foregroundStyle(amber)
                 Text("Yatırım Kalemleri").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -1232,7 +1242,7 @@ struct CompensationCalculatorView: View {
             Text("Tahmini değerler. Düzenlemek için üzerine yazın.")
                 .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
             costRow("Kondansatör",                   binding: $capCostStr,       placeholder: defCap,    icon: "cylinder.split.1x2.fill", color: .cyan)
-            costRow("Kontaktörler (\(stepCountOption) adet)", binding: $contactorCostStr, placeholder: defCon,    icon: "switch.2",               color: .purple)
+            costRow("Kontaktörler (\(editableSteps.count) adet)", binding: $contactorCostStr, placeholder: defCon,    icon: "switch.2",               color: .purple)
             costRow("Reaktör\(thdPercent >= 5 ? "" : " (gerekmez)")", binding: $reactorCostStr, placeholder: defReactor, icon: "slider.horizontal.3",    color: thdPercent >= 5 ? .orange : .gray)
             costRow("Pano / Montaj Malzeme",          binding: $panelCostStr,     placeholder: defPanel,  icon: "square.3.layers.3d",      color: amber)
             costRow("İşçilik",                        binding: $laborCostStr,     placeholder: defLabor,  icon: "person.fill",             color: .green)
@@ -1397,8 +1407,8 @@ struct CompensationCalculatorView: View {
         let pbStr = pb < 120
             ? String(format: "%.0f ay (%.1f yıl)", pb, pb / 12)
             : "> 10 yıl"
-        let stepCnt = editableSteps.isEmpty ? stepCountOption : editableSteps.count
-        let stepTotal = editableSteps.isEmpty ? nearestStandard(computedQcKVAr / Double(max(1, stepCountOption))) * Double(stepCountOption) : editableStepsTotal
+        let stepCnt = editableSteps.count
+        let stepTotal = editableStepsTotal
         return VStack(spacing: 14) {
             HStack {
                 Image(systemName: "person.fill.checkmark").foregroundStyle(.green)
@@ -1426,8 +1436,8 @@ struct CompensationCalculatorView: View {
     }
 
     private var technicalSummaryCard: some View {
-        let stepCntT = editableSteps.isEmpty ? stepCountOption : editableSteps.count
-        let stepTotalT = editableSteps.isEmpty ? nearestStandard(computedQcKVAr / Double(max(1, stepCountOption))) * Double(stepCountOption) : editableStepsTotal
+        let stepCntT = editableSteps.count
+        let stepTotalT = editableStepsTotal
         let (rlabel, _, _, _) = reactorInfo
         return VStack(spacing: 10) {
             HStack {
@@ -1491,7 +1501,7 @@ struct CompensationCalculatorView: View {
                     return
                 }
                 let pKW = effectiveActivePowerKW
-                let sKVA = effectiveApparentPowerKVA
+                let sKVA = pKW / max(0.001, computedCosPhi)
                 let input = CompensationInput(
                     activePowerKW: pKW,
                     apparentPowerKVA: sKVA,
@@ -1503,21 +1513,16 @@ struct CompensationCalculatorView: View {
                     electricityTariff: penaltyRate,
                     investmentCostTL: totalInvestment
                 )
-                if var result = try? CompensationEngine.calculate(input: input) {
-                    // Kullanıcının elle düzenlediği kademeleri engine sonucuna yansıt
-                    if !editableSteps.isEmpty {
-                        result.selectedSteps     = stepsAsCapacitorSteps()
-                        result.totalInstalledKVAr = editableStepsTotal
-                        result.stepCount         = editableSteps.count
-                        let maxKVAr              = editableSteps.max() ?? result.stepSizeKVAr
-                        result.contactorCurrentA = contactorAmps(forKVAr: maxKVAr)
-                        let cabinets = editableSteps.count > 12 ? 2 : 1
-                        let width    = min(400 + editableSteps.count * 200, 2400)
-                        result.panelSizeDescription = "\(width) mm genişlik · \(cabinets) dolap"
+                do {
+                    guard editableSteps.count <= stepCountOption else {
+                        calculationError = "Rölenin kademe sınırı aşıldı."; return
                     }
-                    pendingQuoteItems = QuoteEngine.itemsFromCompensation(result)
+                    let result = try CompensationEngine.calculate(input: input, selectedSteps: stepsAsCapacitorSteps())
+                    pendingQuoteItems = QuoteEngine.itemsFromCompensation(result, costs: effectiveCosts)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     showCustomerPicker = true
+                } catch {
+                    calculationError = error.localizedDescription
                 }
             } label: {
                 Label("Teklif'e Ekle", systemImage: "doc.badge.plus")
@@ -1526,6 +1531,11 @@ struct CompensationCalculatorView: View {
                     .background(RoundedRectangle(cornerRadius: 16).fill(amber).shadow(color: amber.opacity(0.4), radius: 8, y: 4))
             }
             .buttonStyle(.plain)
+            .alert("Hesaplama tamamlanamadı", isPresented: Binding(
+                get: { calculationError != nil }, set: { if !$0 { calculationError = nil } }
+            )) {
+                Button("Tamam", role: .cancel) { calculationError = nil }
+            } message: { Text(calculationError ?? "") }
             .alert("Kompanzasyon Gerekmiyor", isPresented: $showNoCompensationAlert) {
                 Button("Tamam", role: .cancel) { }
             } message: {
@@ -1587,10 +1597,13 @@ struct CompensationCalculatorView: View {
         }
     }
 
-    private func recalculate() {
+    private func recalculate(rebuildSteps: Bool = true) {
         let p = effectiveActivePowerKW
         let s = effectiveApparentPowerKVA
-        guard s > 0 else { computedCosPhi = 0; return }
+        guard p.isFinite, s.isFinite, p > 0, s >= p else {
+            computedCosPhi = 0; computedQcKVAr = 0; computedMonthlySaving = 0
+            editableSteps = []; updateStepWarnings(); return
+        }
 
         let cos: Double
         if inputMode == .instant && useDirectCosPhi {
@@ -1600,18 +1613,24 @@ struct CompensationCalculatorView: View {
         }
         computedCosPhi = cos
 
-        let phi1 = acos(max(0.001, min(cos, 0.9999)))
-        let phi2 = acos(targetCosPhi)
-        computedQcKVAr = max(0, p * (tan(phi1) - tan(phi2)))
+        computedQcKVAr = max(0, CompensationEngine.calculateRequiredQc(
+            activePowerKW: p, currentCosPhi: cos, targetCosPhi: targetCosPhi))
 
-        let qReactive     = sqrt(max(0, s * s - p * p))
+        let qReactive     = p * tan(acos(max(0.001, min(cos, 1))))
         let penaltyQ      = max(0, qReactive - p * 0.33)
         computedMonthlySaving = penaltyQ * 720 * penaltyRate
 
+        if rebuildSteps { rebuildEditableSteps() }
+        updateStepWarnings()
+    }
+
+    private func updateStepWarnings() {
+        let p = effectiveActivePowerKW
+        let cos = max(0.001, min(computedCosPhi, 1))
+        let qReactive = p * tan(acos(cos))
         // Aşırı kurulum uyarısı — engine kademeleri üzerinden kontrol
         if computedQcKVAr > 0 {
-            let eSteps = CompensationEngine.selectCapacitorSteps(totalQcKVAr: computedQcKVAr)
-            let eTotal = eSteps.reduce(0.0) { $0 + $1.totalKVAr }
+            let eTotal = editableStepsTotal
             let ratio  = (eTotal - computedQcKVAr) / computedQcKVAr
             engineOversizingWarning = ratio > 0.5
                 ? String(format: "Kurulan kapasite ihtiyacın %%%.0f üzerinde — minimum standart kademe (2.5 kVAr) küçük yükler için orantısız büyük kalıyor, sabit kondansatörlü özel çözüm değerlendirilebilir.", ratio * 100)
@@ -1628,42 +1647,52 @@ struct CompensationCalculatorView: View {
             engineCapacitiveRiskWarning = nil
         }
 
-        rebuildEditableSteps()
     }
 
     // MARK: - Computed Helpers
 
+    private var currentHarmonics: (resonanceHz: Double, risk: HarmonicRisk, reactorFactor: Double) {
+        guard editableStepsTotal > 0 else { return (0, .low, 0) }
+        return CompensationEngine.analyzeHarmonics(
+            transformerKVA: Double(transformerKVA), installedQcKVAr: editableStepsTotal, thd: thdPercent)
+    }
+
     private var reactorInfo: (label: String, factor: String, color: Color, reason: String) {
-        if thdPercent < 5 {
+        if currentHarmonics.reactorFactor == 0 {
             return ("Reaktör Gerekmez", "—", .green, "THD < %5 — şebeke temiz")
-        } else if thdPercent < 8 {
+        } else if currentHarmonics.reactorFactor == 0.0567 {
             return ("%5.67 Detuned Reaktör", "p = 0.0567", .orange, "210 Hz koruma — 5. harmonik altı")
-        } else if thdPercent < 20 {
-            return ("%7 Detuned Reaktör", "p = 0.07", Color(red:1,green:0.5,blue:0), "189 Hz rezonans — 3. harmonik altı")
+        } else if currentHarmonics.reactorFactor == 0.07 {
+            return ("%7 Detuned Reaktör", "p = 0.07", Color(red:1,green:0.5,blue:0), "189 Hz rezonans — 3. ile 5. harmonik arası")
         } else {
             return ("%14 / Aktif Filtre", "p = 0.14", .red, "3. harmonik koruması — aktif filtre değerlendirin")
         }
     }
 
     private var defaultCosts: (cap: Double, con: Double, reactor: Double, panel: Double, labor: Double) {
-        let cnt      = editableSteps.isEmpty ? stepCountOption : editableSteps.count
-        let total    = editableSteps.isEmpty ? nearestStandard(computedQcKVAr / Double(max(1, stepCountOption))) * Double(stepCountOption) : editableStepsTotal
+        let cnt      = editableSteps.count
+        let total    = editableStepsTotal
         let cap      = total * 150
         let con      = Double(cnt) * 800
-        let reactor  = thdPercent >= 5 ? total * 200 : 0
+        let reactor  = currentHarmonics.reactorFactor > 0 ? total * 200 : 0
         let panel: Double = cnt > 12 ? 18000 : cnt > 6 ? 12000 : 6000
         let labor    = (cap + con + reactor + panel) * 0.18
         return (cap, con, reactor, panel, labor)
     }
 
-    private var totalInvestment: Double {
+    private var effectiveCosts: (cap: Double, con: Double, reactor: Double, panel: Double, labor: Double) {
         let (dc, dn, dr, dp, dl) = defaultCosts
         let cap     = Double(capCostStr)       ?? dc
         let con     = Double(contactorCostStr)  ?? dn
         let reactor = Double(reactorCostStr)   ?? dr
         let panel   = Double(panelCostStr)     ?? dp
         let labor   = Double(laborCostStr)     ?? dl
-        return cap + con + reactor + panel + labor
+        return (max(0, cap), max(0, con), max(0, reactor), max(0, panel), max(0, labor))
+    }
+
+    private var totalInvestment: Double {
+        let c = effectiveCosts
+        return c.cap + c.con + c.reactor + c.panel + c.labor
     }
 
     private var monthlySavingsBreakdown: (penalty: Double, copper: Double, total: Double) {
@@ -1691,8 +1720,12 @@ struct CompensationCalculatorView: View {
 
     private func rebuildEditableSteps() {
         guard computedQcKVAr > 0, stepCountOption > 0 else { editableSteps = []; return }
-        let std = nearestStandard(computedQcKVAr / Double(stepCountOption))
-        editableSteps = Array(repeating: std, count: stepCountOption)
+        editableSteps = CompensationEngine.selectCapacitorSteps(
+            totalQcKVAr: computedQcKVAr, maximumSteps: stepCountOption
+        ).flatMap { Array(repeating: $0.ratingKVAr, count: $0.quantity) }
+        if editableSteps.isEmpty {
+            calculationError = "Gerekli kapasite seçilen kademe sınırını aşıyor."
+        }
     }
 
     private func contactorAmps(forKVAr kvar: Double) -> Double {

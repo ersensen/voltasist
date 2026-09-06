@@ -92,12 +92,14 @@ struct QuoteEngine {
     /// Kompanzasyon hesaplama sonucundan teklif kalemleri oluştur
     /// - Parameter result: CompensationEngine çıktısı
     /// - Returns: Teklif kalemleri dizisi
-    static func itemsFromCompensation(_ result: CompensationResult) -> [QuoteItem] {
+    static func itemsFromCompensation(_ result: CompensationResult,
+        costs: (cap: Double, con: Double, reactor: Double, panel: Double, labor: Double)? = nil) -> [QuoteItem] {
         var items: [QuoteItem] = []
 
         // 1. Kondansatör kademeleri
         for step in result.selectedSteps {
-            let condUnitPrice = capacitorUnitPrice(kvar: step.ratingKVAr)
+            let condUnitPrice = costs.map { $0.cap * step.ratingKVAr / max(0.001, result.totalInstalledKVAr) }
+                ?? capacitorUnitPrice(kvar: step.ratingKVAr)
             items.append(QuoteItem(
                 title: "Güç Kondansatörü \(formatKVAr(step.ratingKVAr)) kVAr",
                 description: "440V AC, cylindrical, dry-type alüminyum folyo kondansatör",
@@ -110,9 +112,9 @@ struct QuoteEngine {
         }
 
         // 2. Reaktör (gerekiyorsa)
-        if result.reactorRequired {
+        if result.reactorRequired || (costs?.reactor ?? 0) > 0 {
             let reactorDesc = "Detuned reaktör %\(String(format: "%.2f", result.reactorRatingPercent)) — harmonik filtre"
-            let reactorPrice = result.totalInstalledKVAr * 350.0  // ~350 TL/kVAr
+            let reactorPrice = costs?.reactor ?? (result.totalInstalledKVAr * 350.0)  // ~350 TL/kVAr
             items.append(QuoteItem(
                 title: "Harmonik Filtre Reaktörü \(formatKVAr(result.totalInstalledKVAr)) kVAr",
                 description: reactorDesc,
@@ -125,8 +127,8 @@ struct QuoteEngine {
         }
 
         // 3. AKP panosu (otomatik ise)
-        if result.stepCount > 1 {
-            let panelPrice = 8000.0 + result.totalInstalledKVAr * 200.0
+        if result.stepCount > 1 || (costs?.panel ?? 0) > 0 {
+            let panelPrice = costs?.panel ?? (8000.0 + result.totalInstalledKVAr * 200.0)
             items.append(QuoteItem(
                 title: "Otomatik Kompanzasyon Panosu (AKP) \(formatKVAr(result.totalInstalledKVAr)) kVAr",
                 description: "\(result.stepCount) kademeli, mikrodenetleyicili, \(result.panelSizeDescription)",
@@ -139,7 +141,8 @@ struct QuoteEngine {
         }
 
         // 4. Kontaktör (her kademe için)
-        let contactorPrice = contactorUnitPrice(amps: result.contactorCurrentA)
+        let contactorPrice = costs.map { $0.con / Double(max(1, result.stepCount)) }
+            ?? contactorUnitPrice(amps: result.contactorCurrentA)
         items.append(QuoteItem(
             title: "Güç Kontaktörü \(Int(ceil(result.contactorCurrentA)))A",
             description: "3 kutuplu, kondansatör şarj sınırlayıcılı özel kontaktör",
@@ -158,7 +161,7 @@ struct QuoteEngine {
             category: .labor,
             quantity: laborHours,
             unit: "saat",
-            unitPrice: 500.0,  // Uzman elektrikçi
+            unitPrice: costs.map { $0.labor / laborHours } ?? 500.0,
             vatRate: 0.20
         ))
 

@@ -19,9 +19,12 @@ struct DashboardView: View {
             VStack(spacing: 20) {
                 headerSection
                 kpiRow
-                if persistence.pendingMaintenanceCount > 0 {
+                NavigationLink {
+                    MaintenanceTrackingView()
+                } label: {
                     maintenancePendingCard
                 }
+                .buttonStyle(.plain)
                 if vm.panelsWithCosPhiWarning > 0 {
                     cosPhiWarningCard(count: vm.panelsWithCosPhiWarning)
                 }
@@ -165,9 +168,13 @@ struct DashboardView: View {
                 .foregroundStyle(persistence.overdueMaintenanceCount > 0 ? Color.red : Color.yellow)
                 .shadow(color: (persistence.overdueMaintenanceCount > 0 ? Color.red : Color.yellow).opacity(0.5), radius: 6)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Bekleyen Bakım Kontrolleri")
+                Text("Bakım Takip")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
+                if persistence.pendingMaintenanceCount == 0 {
+                    Text("Panolar, ölçümler ve bakım ziyaretleri")
+                        .font(.caption).foregroundStyle(.gray)
+                }
                 HStack(spacing: 12) {
                     if persistence.overdueMaintenanceCount > 0 {
                         Label("\(persistence.overdueMaintenanceCount) gecikmiş", systemImage: "exclamationmark.circle.fill")

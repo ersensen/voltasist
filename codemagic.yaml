@@ -14,14 +14,31 @@ workflows:
       vars:
         XCODE_PROJECT: "VoltAsist.xcodeproj"
         XCODE_SCHEME: "VoltAsist"
+        APP_STORE_APPLE_ID: "6774540435"
     scripts:
       - name: Generate Xcode Project via XcodeGen
         script: |
           brew install xcodegen
           xcodegen generate
+      - name: Run iOS tests
+        script: |
+          set -euo pipefail
+          xcode-project run-tests --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+        test_report: build/ios/test/*.xml
       - name: Apply code signing to Xcode project
         script: |
           xcode-project use-profiles
+      - name: Set next TestFlight build number
+        script: |
+          set -euo pipefail
+          latest=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID")
+          if [[ ! "$latest" =~ ^[0-9]+$ ]]; then
+            echo "Could not determine the latest TestFlight build number."
+            exit 1
+          fi
+          next=$((10#$latest + 1))
+          if (( next < 35 )); then next=35; fi
+          agvtool new-version -all "$next"
       - name: Build and Archive
         script: |
           xcode-project build-ipa \
@@ -29,6 +46,7 @@ workflows:
             --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
+      - build/ios/test/**
     publishing:
       email:
         recipients:

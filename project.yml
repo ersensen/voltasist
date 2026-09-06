@@ -23,8 +23,9 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Bakım fotoğrafı eklemek için galeri erişimi gerekiyor."
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
-        MARKETING_VERSION: "1.0.1"
-        CURRENT_PROJECT_VERSION: "34"
+        MARKETING_VERSION: "1.0.2"
+        CURRENT_PROJECT_VERSION: "35"
+        VERSIONING_SYSTEM: apple-generic
         SWIFT_VERSION: "5.9"
         OTHER_SWIFT_FLAGS: ""
       configs:
@@ -32,10 +33,27 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
         release:
           PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist
+  VoltAsistTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: VoltAsist
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.ersensen.voltasist.tests
+        SWIFT_VERSION: "5.9"
 schemes:
   VoltAsist:
     build:
       targets:
         VoltAsist: all
+    test:
+      config: Debug
+      targets:
+        - VoltAsistTests
     archive:
       config: Release

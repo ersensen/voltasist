@@ -107,14 +107,6 @@ struct MainTabView: View {
             .tag(AppTab.solar)
 
             NavigationStack {
-                MaterialListView()
-            }
-            .tabItem {
-                Label(AppTab.materials.title, systemImage: AppTab.materials.icon)
-            }
-            .tag(AppTab.materials)
-
-            NavigationStack {
                 EngineeringPanelView()
             }
             .tabItem {
@@ -129,6 +121,7 @@ struct MainTabView: View {
                 Label(AppTab.maintenance.title, systemImage: AppTab.maintenance.icon)
             }
             .tag(AppTab.maintenance)
+            .badge(persistence.pendingMaintenanceCount)
         }
         .tint(amber)
         .background(bgColor.ignoresSafeArea())

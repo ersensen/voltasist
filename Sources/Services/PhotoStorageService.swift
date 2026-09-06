@@ -16,14 +16,19 @@ struct PhotoStorageService {
     }
 
     @discardableResult
-    static func save(image: UIImage, entityID: UUID) -> UUID? {
-        let dir = directory(for: entityID)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    static func save(image: UIImage, entityID: UUID, storageRoot: URL? = nil) -> UUID? {
+        let dir = storageRoot?.appendingPathComponent(entityID.uuidString, isDirectory: true) ?? directory(for: entityID)
+
         let photoID = UUID()
         let url = dir.appendingPathComponent("\(photoID.uuidString).jpg")
         guard let data = image.jpegData(compressionQuality: 0.78) else { return nil }
-        try? data.write(to: url, options: .atomic)
-        return photoID
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            return photoID
+        } catch {
+            return nil
+        }
     }
 
     static func load(photoID: UUID, entityID: UUID) -> UIImage? {

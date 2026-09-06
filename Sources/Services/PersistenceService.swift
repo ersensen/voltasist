@@ -53,8 +53,11 @@ final class PersistenceService: ObservableObject {
 
     // MARK: - Init
 
-    /// Private init — Singleton kullanımı zorunlu
-    private init() {
+    /// Tests can inject an isolated UserDefaults suite.
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         loadAll()
     }
 
@@ -68,11 +71,12 @@ final class PersistenceService: ObservableObject {
         materials          = load(key: Keys.materials,   type: [Material].self)          ?? []
         settings           = load(key: Keys.settings,    type: AppSettings.self)         ?? .defaultSettings
         maintenanceRecords = load(key: Keys.maintenance, type: [MaintenanceRecord].self) ?? []
-        if materials.count < DefaultMaterialCatalog.all.count { seedDefaultMaterials() }
+        if defaults.object(forKey: Keys.materials) == nil { seedDefaultMaterials() }
     }
 
     /// Malzeme listesi boşsa hazır örnek kataloğu yükler (ilk kurulum).
     func seedDefaultMaterials() {
+        guard defaults.object(forKey: Keys.materials) == nil else { return }
         materials = DefaultMaterialCatalog.all
         persist(materials, key: Keys.materials)
     }
@@ -276,7 +280,7 @@ final class PersistenceService: ObservableObject {
     private func persist<T: Encodable>(_ value: T, key: String) {
         do {
             let data = try JSONEncoder().encode(value)
-            UserDefaults.standard.set(data, forKey: key)
+            defaults.set(data, forKey: key)
         } catch {
             // Üretimde bu hata bir loglama servisine iletilmelidir
             print("⚠️ PersistenceService: '\(key)' kaydedilemedi — \(error.localizedDescription)")
@@ -289,7 +293,7 @@ final class PersistenceService: ObservableObject {
     ///   - type: Hedef tip (T.Type)
     /// - Returns: Başarıyla çözümlenen nesne, aksi halde nil
     private func load<T: Decodable>(key: String, type: T.Type) -> T? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let data = defaults.data(forKey: key) else { return nil }
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {

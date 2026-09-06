@@ -1100,6 +1100,7 @@ struct MaintenanceVisitFormView: View {
     @State private var overallNotes: String = ""
     @State private var expandedItem: UUID? = nil
     @State private var selectedImages: [UIImage] = []
+    @State private var photoSaveFailed = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
 
@@ -1153,9 +1154,12 @@ struct MaintenanceVisitFormView: View {
                             visit.overallNotes = overallNotes
                             var photoIDs: [UUID] = []
                             for img in selectedImages {
-                                if let pid = PhotoStorageService.save(image: img, entityID: visit.id) {
-                                    photoIDs.append(pid)
+                                guard let pid = PhotoStorageService.save(image: img, entityID: visit.id) else {
+                                    for savedID in photoIDs { PhotoStorageService.delete(photoID: savedID, entityID: visit.id) }
+                                    photoSaveFailed = true
+                                    return
                                 }
+                                photoIDs.append(pid)
                             }
                             visit.photoIDs = photoIDs
                             onSave(visit)
@@ -1177,6 +1181,11 @@ struct MaintenanceVisitFormView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("İptal") { dismiss() }.foregroundStyle(.gray)
                 }
+            }
+            .alert("Fotoğraf kaydedilemedi", isPresented: $photoSaveFailed) {
+                Button("Tamam", role: .cancel) { }
+            } message: {
+                Text("Kayıt tamamlanmadı. Depolama alanını kontrol edip tekrar deneyin.")
             }
             .sheet(isPresented: $showPhotoPicker) {
                 PhotoPickerView { images in selectedImages.append(contentsOf: images) }
@@ -1567,6 +1576,7 @@ struct MaintenanceReadingFormView: View {
     @State private var notes: String         = ""
     @State private var date: Date            = Date()
     @State private var selectedImages: [UIImage] = []
+    @State private var photoSaveFailed = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
     @State private var measuredKVArStr: String = ""
@@ -1710,9 +1720,12 @@ struct MaintenanceReadingFormView: View {
                         r.thdPercent      = Double(thdStr.replacingOccurrences(of: ",", with: "."))
                         var photoIDs: [UUID] = []
                         for img in selectedImages {
-                            if let pid = PhotoStorageService.save(image: img, entityID: readingID) {
+                            guard let pid = PhotoStorageService.save(image: img, entityID: readingID) else {
+                                    for savedID in photoIDs { PhotoStorageService.delete(photoID: savedID, entityID: readingID) }
+                                    photoSaveFailed = true
+                                    return
+                                }
                                 photoIDs.append(pid)
-                            }
                         }
                         r.photoIDs = photoIDs
                         onSave(r)
@@ -1721,6 +1734,11 @@ struct MaintenanceReadingFormView: View {
                     .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(amber)
                     .disabled(activeKWh <= 0)
                 }
+            }
+            .alert("Fotoğraf kaydedilemedi", isPresented: $photoSaveFailed) {
+                Button("Tamam", role: .cancel) { }
+            } message: {
+                Text("Kayıt tamamlanmadı. Depolama alanını kontrol edip tekrar deneyin.")
             }
             .sheet(isPresented: $showPhotoPicker) {
                 PhotoPickerView { images in selectedImages.append(contentsOf: images) }

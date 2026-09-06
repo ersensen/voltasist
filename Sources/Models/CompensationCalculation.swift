@@ -247,10 +247,11 @@ struct CompensationResult: Codable {
     /// Yıllık toplam tasarruf (TL)
     var annualSavingsTL: Double { totalMonthlySavingTL * 12.0 }
 
-    /// Transformatör kapasite kazanımı (%) — capacityGainKVA / trafo kapasite varsayımı
+    /// Serbest kalan kapasitenin trafo anma gücüne oranı (%).
+    /// Motorun aynı anma gücüyle hesapladığı önce/sonra yük yüzdelerinin farkıdır.
     var transformerCapacityGainPercent: Double {
-        guard let gain = capacityGainKVA, gain > 0 else { return 0 }
-        // Trafo kapasitesi bilinmiyorsa 1000 kVA referans al
-        return (gain / 1000.0) * 100.0
+        guard let before = transformerLoadBefore, let after = transformerLoadAfter,
+              before.isFinite, after.isFinite else { return 0 }
+        return max(0, before - after)
     }
 }

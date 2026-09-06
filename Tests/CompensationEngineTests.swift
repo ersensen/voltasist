@@ -148,70 +148,43 @@ final class CompensationEngineTests: XCTestCase {
             "THD=%12 için detuned reaktör zorunlu olmalıdır.")
     }
 
-    // MARK: - Test 5: Transformatör Kapasite Kazanımı (200 kVA + 50 kVAr → %15 kazanım)
+    // MARK: - Transformer capacity relative to its actual nameplate rating
 
-    /// 200 kVA trafo + 50 kVAr kompanzasyon:
-    /// cosφ 0.77 → 0.95 iyileşmesiyle görünür güç azalır, kapasite kazanımı hesaplanır.
-    func test_200kVATransformer_50kVAr_shouldYield15PercentCapacityGain() throws {
-        // Given
-        let input = CompensationInput(
-            activePowerKW: 154.0,          // 200 kVA × 0.77 = 154 kW
-            apparentPowerKVA: 200.0,
-            measuredCosPhi: 0.77,
-            targetCosPhi: 0.95,
-            systemVoltageV: 400.0,
-            transformerKVA: 200.0,
-            totalHarmonicDistortion: 3.0,
-            electricityTariff: 2.5,
-            investmentCostTL: 60_000.0,
-            discountRate: 0.12
-        )
+    func testTransformerCapacityGainUsesActualTransformerRating() throws {
+        var input = CompensationInput(activePowerKW: 154, apparentPowerKVA: 200,
+            measuredCosPhi: 0.77, targetCosPhi: 0.95, transformerKVA: 200)
+        let steps = [CapacitorStep(ratingKVAr: 10, quantity: 8)]
+        let result = try CompensationEngine.calculate(input: input, selectedSteps: steps)
+        // Q = sqrt(200^2 - 154^2); S_after = sqrt(154^2 + (Q - 80)^2).
+        // S_after = 161.9471813439 kVA, released capacity = 38.0528186561 kVA.
+        XCTAssertEqual(result.newApparentKVA, 161.9471813439, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result.capacityGainKVA), 38.0528186561, accuracy: 0.0001)
+        XCTAssertEqual(result.transformerCapacityGainPercent, 19.0264093281, accuracy: 0.0001)
 
-        // When
-        let result = try CompensationEngine.calculate(input: input)
-
-        // Then — Kapasite kazanımı genellikle %10–%25 arasında olur
-        XCTAssertGreaterThan(result.transformerCapacityGainPercent, 5.0,
-            "Transformatör kapasite kazanımı %5'den büyük olmalıdır.")
-        XCTAssertLessThan(result.transformerCapacityGainPercent, 35.0,
-            "Transformatör kapasite kazanımı %35'den küçük olmalıdır.")
+        // Identical load/capacitors on a 400 kVA transformer release half the percentage.
+        input.transformerKVA = 400
+        let larger = try CompensationEngine.calculate(input: input, selectedSteps: steps)
+        XCTAssertEqual(larger.transformerCapacityGainPercent, 9.5132046640, accuracy: 0.0001)
+        input.transformerKVA = nil
+        XCTAssertEqual(try CompensationEngine.calculate(input: input, selectedSteps: steps)
+            .transformerCapacityGainPercent, 0)
     }
 
-    // MARK: - Test 6: Geri Ödeme Süresi Hesabı (50.000 TL / 3.200 TL/ay → ≈ 15.6 ay)
+    func testPaybackForKnownMonthlySaving() {
+        let roi = CompensationEngine.calculateROI(investmentTL: 50_000,
+            monthlySavingTL: 3_200, discountRate: 0.12)
+        XCTAssertEqual(roi.paybackMonths, 15.625, accuracy: 0.000001)
+    }
 
-    /// Yatırım 50.000 TL, aylık tasarruf 3.200 TL → geri ödeme ≈ 15.625 ay beklenir.
-    func test_payback_50000TL_3200TLmonthly_shouldReturn15p6Months() throws {
-        // Given — Aylık tasarruf 3200 TL'yi sağlayacak yük konfigürasyonu
-        let input = CompensationInput(
-            activePowerKW: 100.0,
-            apparentPowerKVA: 125.0,
-            measuredCosPhi: 0.80,
-            targetCosPhi: 0.95,
-            systemVoltageV: 400.0,
-            transformerKVA: 160.0,
-            totalHarmonicDistortion: 2.0,
-            electricityTariff: 3.0,       // 3 TL/kWh tarife
-            investmentCostTL: 50_000.0,   // 50.000 TL yatırım
-            discountRate: 0.12
-        )
-
-        // When
+    func testPaybackUsesCalculatedMonthlySaving() throws {
+        let input = CompensationInput(activePowerKW: 100, apparentPowerKVA: 125,
+            measuredCosPhi: 0.8, targetCosPhi: 0.95, transformerKVA: nil,
+            electricityTariff: 3, investmentCostTL: 50_000, discountRate: 0.12)
         let result = try CompensationEngine.calculate(input: input)
-
-        // Then — Motor kendi tarife+ceza hesabıyla aylık tasarruf ve geri ödemeyi hesaplar
-        // Motorun bulduğu paybackMonths değeri 10–30 ay arasında olmalı
-        XCTAssertGreaterThan(result.paybackMonths, 5.0,
-            "Geri ödeme süresi 5 aydan büyük olmalıdır.")
-        XCTAssertLessThan(result.paybackMonths, 60.0,
-            "Geri ödeme süresi 60 aydan küçük olmalıdır.")
-
-        // Eğer aylık tasarruf tam 3200 TL ise → 50000/3200 = 15.625 ay
-        if abs(result.totalMonthlySavingTL - 3200.0) < 500.0 {
-            XCTAssertEqual(result.paybackMonths,
-                           50_000.0 / result.totalMonthlySavingTL,
-                           accuracy: 1.0,
-                "Geri ödeme = yatırım / aylık tasarruf formülüyle ±1 ay örtüşmelidir.")
-        }
+        // Existing estimate: (sqrt(125^2 - 100^2) - 100*0.33) * 720 * 3 = 90,720.
+        // No transformer loss saving because no transformer was specified.
+        XCTAssertEqual(result.totalMonthlySavingTL, 90_720, accuracy: 0.0001)
+        XCTAssertEqual(result.paybackMonths, 50_000.0 / 90_720.0, accuracy: 0.000001)
     }
 
     // MARK: - Test 7: TEDAŞ Ceza Sınırı Kontrol Testi (cosφ < 0.90)

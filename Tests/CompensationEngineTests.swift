@@ -156,15 +156,15 @@ final class CompensationEngineTests: XCTestCase {
         let steps = [CapacitorStep(ratingKVAr: 10, quantity: 8)]
         let result = try CompensationEngine.calculate(input: input, selectedSteps: steps)
         // Q = sqrt(200^2 - 154^2); S_after = sqrt(154^2 + (Q - 80)^2).
-        // S_after = 161.9471813439 kVA, released capacity = 38.0528186561 kVA.
-        XCTAssertEqual(result.newApparentKVA, 161.9471813439, accuracy: 0.0001)
-        XCTAssertEqual(try XCTUnwrap(result.capacityGainKVA), 38.0528186561, accuracy: 0.0001)
-        XCTAssertEqual(result.transformerCapacityGainPercent, 19.0264093281, accuracy: 0.0001)
+        // S_after = 161.1911773627 kVA, released capacity = 38.8088226373 kVA.
+        XCTAssertEqual(result.newApparentKVA, 161.1911773627, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(result.capacityGainKVA), 38.8088226373, accuracy: 0.0001)
+        XCTAssertEqual(result.transformerCapacityGainPercent, 19.4044113186, accuracy: 0.0001)
 
         // Identical load/capacitors on a 400 kVA transformer release half the percentage.
         input.transformerKVA = 400
         let larger = try CompensationEngine.calculate(input: input, selectedSteps: steps)
-        XCTAssertEqual(larger.transformerCapacityGainPercent, 9.5132046640, accuracy: 0.0001)
+        XCTAssertEqual(larger.transformerCapacityGainPercent, 9.7022056593, accuracy: 0.0001)
         input.transformerKVA = nil
         XCTAssertEqual(try CompensationEngine.calculate(input: input, selectedSteps: steps)
             .transformerCapacityGainPercent, 0)

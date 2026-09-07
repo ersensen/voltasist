@@ -73,8 +73,7 @@ final class DashboardViewModel: ObservableObject {
         customerCount   = persistence.customerCount
         expiringQuoteCount = persistence.expiringQuotes.count
         panelsWithCosPhiWarning = persistence.maintenanceRecords.filter {
-            guard let cp = $0.lastCosPhi else { return false }
-            return cp < 0.95
+            $0.lastStatus == .critical || $0.lastStatus == .warning || $0.hasOpenFailures
         }.count
 
         updateGreeting()

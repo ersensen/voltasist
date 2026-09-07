@@ -735,9 +735,9 @@ struct PDFService {
             let sortedReadings = record.readings.sorted { $0.date > $1.date }
             if !sortedReadings.isEmpty {
                 let avgCos = sortedReadings.prefix(12).reduce(0.0) { $0 + $1.cosPhi } / Double(min(12, sortedReadings.count))
-                let totalPenalty = sortedReadings.prefix(12).reduce(0.0) { $0 + $1.estimatedPenalty }
+                let totalPenalty = record.totalEstimatedPenalty
 
-                y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Okuma Özeti (Son 12 Ay)", startY: y, rows: [
+                y = drawCompSection(ctx: ctx.cgContext, pageRect: pageRect, title: "Okuma Özeti (Son 12 Ölçüm)", startY: y, rows: [
                     ("Toplam Okuma Sayısı", "\(sortedReadings.count) adet"),
                     ("Ortalama cos φ", String(format: "%.3f", avgCos) + (avgCos >= 0.95 ? " ✓" : " !")),
                     ("Tahmini Toplam Ceza", formatCurrency(totalPenalty)),
@@ -771,9 +771,15 @@ struct PDFService {
                     NSAttributedString(string: String(format: "%.0f", r.inductiveKVArh), attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 260, y: y + 6))
                     let cosStr = String(format: "%.3f", r.cosPhi)
                     NSAttributedString(string: cosStr, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 330, y: y + 6))
-                    let statusStr = r.cosPhi >= 0.95 ? "Cezasız" : r.cosPhi >= 0.90 ? "Risk" : "Cezalı"
+                    let statusStr: String
+                    switch r.status {
+                    case .good: statusStr = "Sınır içi"
+                    case .warning: statusStr = "Risk"
+                    case .critical: statusStr = "Aşım"
+                    case .unknown: statusStr = "Bilinmiyor"
+                    }
                     NSAttributedString(string: statusStr, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 400, y: y + 6))
-                    let penaltyStr = r.estimatedPenalty > 0 ? formatCurrency(r.estimatedPenalty) : "—"
+                    let penaltyStr = r.totalEstimatedPenalty > 0 ? formatCurrency(r.totalEstimatedPenalty) : "—"
                     NSAttributedString(string: penaltyStr, attributes: rowAttrs).draw(at: CGPoint(x: Layout.marginH + 460, y: y + 6))
                     y += Layout.rowHeight
                 }
@@ -814,6 +820,17 @@ struct PDFService {
                                            attributes: [.font: font(size: 7.5), .foregroundColor: Palette.dark])
                             .draw(in: CGRect(x: Layout.marginH + 16, y: y + 2, width: pageRect.width - 2*Layout.marginH - 20, height: 13))
                         y += 14
+                    }
+                    for capacitor in visit.capacitors ?? [] {
+                        let measured = capacitor.measuredKVAr.map { String(format: "%.2f kVAr", $0) } ?? "ölçülmedi"
+                        let text = "\(capacitor.label) | \(capacitor.connection.label) | Nominal: \(capacitor.nominalKVAr) kVAr | Ölçülen: \(measured) | \(capacitor.status.label)"
+                        let attrs: [NSAttributedString.Key: Any] = [.font: font(size: 7.5), .foregroundColor: Palette.dark]
+                        let line = NSAttributedString(string: text, attributes: attrs)
+                        let width = pageRect.width - 2 * Layout.marginH - 20
+                        let height = ceil(line.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height) + 6
+                        if y + height > pageRect.height - 50 { ctx.beginPage(); y = Layout.marginV }
+                        line.draw(in: CGRect(x: Layout.marginH + 16, y: y, width: width, height: height))
+                        y += height
                     }
                     if !visit.overallNotes.isEmpty {
                         NSAttributedString(string: "Not: \(visit.overallNotes)",

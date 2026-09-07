@@ -81,12 +81,14 @@ struct MaintenanceVisit: Identifiable, Codable {
     var overallNotes: String  = ""
     var items: [ChecklistItem]
     var photoIDs: [UUID]      = []
+    /// Optional for records written before capacitor tracking.
+    var capacitors: [MaintenanceCapacitor]? = nil
 
     var completedCount: Int { items.filter { $0.status != .unchecked }.count }
-    var failureCount: Int   { items.filter { $0.status == .failure }.count }
-    var warningCount: Int   { items.filter { $0.status == .warning }.count }
+    var failureCount: Int   { items.filter { $0.status == .failure }.count + (capacitors ?? []).filter { $0.status == .failure }.count }
+    var warningCount: Int   { items.filter { $0.status == .warning }.count + (capacitors ?? []).filter { $0.status == .warning }.count }
     var okCount: Int        { items.filter { $0.status == .ok }.count }
-    var isComplete: Bool    { completedCount == items.count }
+    var isComplete: Bool    { !items.isEmpty && completedCount == items.count && (capacitors ?? []).allSatisfy { $0.isValid && $0.status != .unchecked } }
 
     var failureItems: [ChecklistItem] { items.filter { $0.status == .failure } }
     var warningItems: [ChecklistItem] { items.filter { $0.status == .warning } }

@@ -34,37 +34,71 @@ struct MaintenanceRecord: Identifiable, Codable {
     }
 
     var nextCheckDate: Date {
-        let base: Date
-        if let last = visits.sorted(by: { $0.date > $1.date }).first?.date {
-            base = last
-        } else if let last = readings.sorted(by: { $0.date > $1.date }).first?.date {
-            base = last
-        } else {
-            base = installationDate
-        }
-        return Calendar.current.date(byAdding: .month, value: checkPeriodMonths, to: base) ?? base
+        let base = visits.filter { $0.isComplete }.map(\.date).max() ?? installationDate
+        return Calendar.current.date(byAdding: .month, value: max(1, checkPeriodMonths), to: base) ?? base
     }
 
-    var isOverdue: Bool {
-        nextCheckDate < Date()
+    func isOverdue(on date: Date, calendar: Calendar = .current) -> Bool {
+        calendar.startOfDay(for: nextCheckDate) < calendar.startOfDay(for: date)
     }
-
+    func isDueToday(on date: Date, calendar: Calendar = .current) -> Bool {
+        calendar.isDate(nextCheckDate, inSameDayAs: date)
+    }
+    var isOverdue: Bool { isOverdue(on: Date()) }
+    var isDueToday: Bool { isDueToday(on: Date()) }
     var isDueSoon: Bool {
-        guard !isOverdue else { return false }
-        let threshold = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
-        return nextCheckDate <= threshold
+        let today = Calendar.current.startOfDay(for: Date())
+        let threshold = Calendar.current.date(byAdding: .day, value: 7, to: today) ?? today
+        return !isOverdue && Calendar.current.startOfDay(for: nextCheckDate) <= threshold
     }
-
-    var lastCosPhi: Double? {
-        readings.sorted(by: { $0.date > $1.date }).first?.cosPhi
-    }
-
+    var lastCosPhi: Double? { readings.max(by: { $0.date < $1.date })?.cosPhi }
     var lastStatus: MaintenanceStatus {
-        guard let cp = lastCosPhi else { return .unknown }
-        if cp >= 0.95 { return .good }
-        if cp >= 0.90 { return .warning }
-        return .critical
+        readings.max(by: { $0.date < $1.date })?.status ?? .unknown
     }
+
+    /// An unchecked item never clears a previous finding. A subsequent explicit OK
+    /// for the same kind (or legacy title) is the evidence that closes it.
+    var openFindings: [ChecklistItem] {
+        var latest: [String: ChecklistItem] = [:]
+        for visit in visits.enumerated().sorted(by: { $0.element.date == $1.element.date ? $0.offset < $1.offset : $0.element.date < $1.element.date }).map(\.element) {
+            for item in visit.items where item.isChecked {
+                let key = item.kind?.rawValue ?? MaintenanceVisit.standardItems.first(where: { $0.title == item.title })?.kind?.rawValue ?? item.title
+                latest[key] = item
+            }
+        }
+        return latest.values.filter { $0.status == .failure || $0.status == .warning }
+            .sorted { $0.title < $1.title }
+    }
+    var hasOpenFailures: Bool { openFindings.contains { $0.status == .failure } || openCapacitorFindings.contains { $0.status == .failure } }
+    private var chronologicalVisits: [MaintenanceVisit] {
+        visits.enumerated().sorted {
+            $0.element.date == $1.element.date ? $0.offset < $1.offset : $0.element.date < $1.element.date
+        }.map(\.element)
+    }
+
+    var capacitorInventory: [MaintenanceCapacitor] {
+        var inventory: [UUID: MaintenanceCapacitor] = [:]
+        for visit in chronologicalVisits {
+            for capacitor in visit.capacitors ?? [] { inventory[capacitor.id] = capacitor }
+        }
+        return inventory.values.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
+    }
+
+    var openCapacitorFindings: [MaintenanceCapacitor] {
+        var checked: [UUID: MaintenanceCapacitor] = [:]
+        for visit in chronologicalVisits {
+            for capacitor in visit.capacitors ?? [] where capacitor.status != .unchecked {
+                checked[capacitor.id] = capacitor
+            }
+        }
+        return checked.values.filter { $0.status == .failure || $0.status == .warning }
+            .sorted { $0.label < $1.label }
+    }
+
+    var totalEstimatedPenalty: Double {
+        readings.sorted { $0.date > $1.date }.prefix(12).reduce(0) { $0 + $1.totalEstimatedPenalty }
+    }
+
 }
 
 // MARK: - Sayaç Okuma
@@ -84,6 +118,24 @@ struct MaintenanceReading: Identifiable, Codable {
     var measuredKVAr: Double?  = nil
     /// Harmonik toplam bozulma oranı (%) — sahada ölçülen — opsiyonel
     var thdPercent: Double?    = nil
+
+    var isValid: Bool {
+        activeKWh.isFinite && activeKWh > 0 &&
+        [inductiveKVArh, capacitiveKVArh, invoiceAmount, tariff].allSatisfy { $0.isFinite && $0 >= 0 } &&
+        [measuredKVAr, thdPercent].allSatisfy { value in
+            guard let value else { return true }
+            return value.isFinite && value >= 0
+        }
+    }
+    var status: MaintenanceStatus {
+        guard isValid else { return .unknown }
+        let inductiveRatio = inductiveKVArh / activeKWh
+        let capacitiveRatio = capacitiveKVArh / activeKWh
+        if inductiveRatio > 0.33 || capacitiveRatio > 0.20 { return .critical }
+        if inductiveRatio >= 0.297 || capacitiveRatio >= 0.18 { return .warning }
+        return .good
+    }
+    var totalEstimatedPenalty: Double { estimatedPenalty + estimatedCapacitivePenalty }
 
     // cos φ = kWh / √(kWh² + (endüktif − kapasitif)²)
     var cosPhi: Double {
@@ -122,9 +174,9 @@ enum MaintenanceStatus {
 
     var label: String {
         switch self {
-        case .good:    return "Cezasız"
+        case .good:    return "Sınırlar içinde"
         case .warning: return "Risk"
-        case .critical: return "Cezalı"
+        case .critical: return "Sınır aşımı"
         case .unknown: return "Bilinmiyor"
         }
     }
@@ -135,6 +187,31 @@ enum MaintenanceStatus {
         case .warning: return "exclamationmark.triangle.fill"
         case .critical: return "xmark.circle.fill"
         case .unknown: return "questionmark.circle.fill"
+        }
+    }
+}
+
+/// Shared form validation: reject malformed, negative and non-finite measurements.
+enum MaintenanceNumber {
+    static func parse(_ text: String) -> Double? {
+        guard let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")),
+              value.isFinite, value >= 0 else { return nil }
+        return value
+    }
+}
+
+enum MaintenanceQueue: String, CaseIterable {
+    case all = "Tümü"
+    case today = "Bugünkü işler"
+    case overdue = "Geciken bakımlar"
+    case failures = "Açık arızalar"
+
+    func includes(_ record: MaintenanceRecord, on date: Date = Date()) -> Bool {
+        switch self {
+        case .all: return true
+        case .today: return record.isDueToday(on: date)
+        case .overdue: return record.isOverdue(on: date)
+        case .failures: return record.hasOpenFailures
         }
     }
 }

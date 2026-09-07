@@ -15,6 +15,7 @@ struct MaintenanceTrackingView: View {
 
     @EnvironmentObject private var persistence: PersistenceService
     @State private var showAddRecord = false
+    @State private var selectedQueue: MaintenanceQueue = .all
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
@@ -29,11 +30,26 @@ struct MaintenanceTrackingView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 14) {
                         summaryHeader
-                        ForEach(persistence.maintenanceRecords.sorted { a, b in
-                            if a.isOverdue != b.isOverdue { return a.isOverdue }
-                            if a.isDueSoon != b.isDueSoon { return a.isDueSoon }
-                            return a.nextCheckDate < b.nextCheckDate
-                        }) { record in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(MaintenanceQueue.allCases, id: \.self) { queue in
+                                    Button {
+                                        selectedQueue = queue
+                                    } label: {
+                                        Text("\(queue.rawValue) (\(persistence.maintenanceRecords.filter { queue.includes($0) }.count))")
+                                            .font(.caption.weight(.semibold))
+                                            .padding(10)
+                                            .background(selectedQueue == queue ? amber.opacity(0.3) : Color.white.opacity(0.06))
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        if visibleRecords.isEmpty {
+                            Text("Bu listede pano yok.").foregroundStyle(.gray).padding()
+                        }
+                        ForEach(visibleRecords) { record in
                             NavigationLink(destination: MaintenanceRecordDetailView(record: record)) {
                                 recordCell(record)
                             }
@@ -44,6 +60,11 @@ struct MaintenanceTrackingView: View {
                     .padding(.top, 14)
                     .padding(.bottom, 100)
                 }
+            }
+        }
+        .onAppear {
+            for record in persistence.maintenanceRecords {
+                MaintenanceNotificationService.shared.schedule(record)
             }
         }
         .navigationTitle("Bakım Takip")
@@ -60,8 +81,15 @@ struct MaintenanceTrackingView: View {
         .sheet(isPresented: $showAddRecord) {
             MaintenanceRecordFormView(record: nil) { newRecord in
                 persistence.saveMaintenanceRecord(newRecord)
-                scheduleNotification(for: newRecord)
+
             }
+        }
+    }
+
+    private var visibleRecords: [MaintenanceRecord] {
+        persistence.maintenanceRecords.filter { selectedQueue.includes($0) }.sorted {
+            if $0.hasOpenFailures != $1.hasOpenFailures { return $0.hasOpenFailures }
+            return $0.nextCheckDate < $1.nextCheckDate
         }
     }
 
@@ -189,39 +217,7 @@ struct MaintenanceTrackingView: View {
 
     // MARK: Notification
 
-    private func scheduleNotification(for record: MaintenanceRecord) {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
-            guard granted else { return }
-            let center = UNUserNotificationCenter.current()
-            let id = record.id.uuidString
-            center.removePendingNotificationRequests(withIdentifiers: [id + "_warn", id + "_due"])
-            let name = record.customerName.isEmpty ? "Kompanzasyon Panosu" : record.customerName
-            let nextCheck = record.nextCheckDate
 
-            if let warnDate = Calendar.current.date(byAdding: .day, value: -7, to: nextCheck), warnDate > Date() {
-                let c = UNMutableNotificationContent()
-                c.title = "Bakım Kontrolü Yaklaşıyor ⚠️"
-                c.body  = "\(name) — kontrol tarihi 7 gün sonra."
-                c.sound = .default
-                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour], from: warnDate)
-                center.add(UNNotificationRequest(identifier: id + "_warn",
-                                                  content: c,
-                                                  trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
-            }
-
-            if nextCheck > Date() {
-                let c = UNMutableNotificationContent()
-                c.title = "Bakım Kontrolü Zamanı 🔧"
-                c.body  = "\(name) — bugün periyodik bakım kontrol günü!"
-                c.sound = .default
-                c.badge = 1
-                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour], from: nextCheck)
-                center.add(UNNotificationRequest(identifier: id + "_due",
-                                                  content: c,
-                                                  trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
-            }
-        }
-    }
 }
 
 // MARK: - Kayıt Detay Ekranı
@@ -236,6 +232,7 @@ struct MaintenanceRecordDetailView: View {
     @State private var showAddReading    = false
     @State private var showEditRecord    = false
     @State private var showAddVisit      = false
+    @State private var editingVisit: MaintenanceVisit?
     @State private var showDetails       = false
     @State private var showDeleteConfirm = false
 
@@ -256,6 +253,7 @@ struct MaintenanceRecordDetailView: View {
             VStack(spacing: 16) {
                 // Üst: risk skoru + 3 kritik metrik
                 facilityRiskCard
+                openFindingsCard
                 criticalMetricsCard
 
                 // Detaylar accordion (varsayılan kapalı)
@@ -306,18 +304,26 @@ struct MaintenanceRecordDetailView: View {
             MaintenanceReadingFormView(defaultTariff: 0.40, panelTotalKVAr: localRecord.totalKVAr) { r in
                 localRecord.readings.append(r)
                 persistence.saveMaintenanceRecord(localRecord)
-                scheduleNotification(for: localRecord)
+
             }
         }
         .sheet(isPresented: $showEditRecord) {
             MaintenanceRecordFormView(record: localRecord) { updated in
                 localRecord = updated
                 persistence.saveMaintenanceRecord(updated)
-                scheduleNotification(for: updated)
+
+            }
+        }
+        .sheet(item: $editingVisit) { draft in
+            MaintenanceVisitFormView(existingVisit: draft) { updated in
+                if let index = localRecord.visits.firstIndex(where: { $0.id == updated.id }) {
+                    localRecord.visits[index] = updated
+                    persistence.saveMaintenanceRecord(localRecord)
+                }
             }
         }
         .sheet(isPresented: $showAddVisit) {
-            MaintenanceVisitFormView { visit in
+            MaintenanceVisitFormView(inventory: localRecord.capacitorInventory) { visit in
                 localRecord.visits.append(visit)
                 persistence.saveMaintenanceRecord(localRecord)
             }
@@ -384,8 +390,8 @@ struct MaintenanceRecordDetailView: View {
 
     private func currentStatusCard(_ reading: MaintenanceReading) -> some View {
         let cp = reading.cosPhi
-        let sc: Color = cp >= 0.95 ? .green : cp >= 0.90 ? .orange : .red
-        let label = cp >= 0.95 ? "✅ Cezasız" : cp >= 0.90 ? "⚠️ Risk" : "❌ Cezalı"
+        let sc: Color = reading.status.color
+        let label = reading.status.label
 
         return VStack(spacing: 10) {
             HStack {
@@ -584,7 +590,7 @@ struct MaintenanceRecordDetailView: View {
 
     private var annualSummaryCard: some View {
         let last12 = Array(localRecord.readings.sorted { $0.date > $1.date }.prefix(12))
-        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty + $1.estimatedCapacitivePenalty }
+        let totalPenalty = localRecord.totalEstimatedPenalty
         let avgCos = last12.isEmpty ? 0.0 : last12.reduce(0.0) { $0 + $1.cosPhi } / Double(last12.count)
         let worst = last12.min(by: { $0.cosPhi < $1.cosPhi })
 
@@ -624,7 +630,7 @@ struct MaintenanceRecordDetailView: View {
         let cp = latest?.cosPhi
         let cpColor: Color = localRecord.lastStatus.color
         let last12 = Array(localRecord.readings.sorted { $0.date > $1.date }.prefix(12))
-        let totalPenalty = last12.reduce(0.0) { $0 + $1.estimatedPenalty + $1.estimatedCapacitivePenalty }
+        let totalPenalty = localRecord.totalEstimatedPenalty
 
         return HStack(spacing: 0) {
             criticalCell(
@@ -706,17 +712,39 @@ struct MaintenanceRecordDetailView: View {
 
     // MARK: - Tesis Risk Skoru (Task 5)
 
+    @ViewBuilder
+    private var openFindingsCard: some View {
+        if !localRecord.openFindings.isEmpty || !localRecord.openCapacitorFindings.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Açık kontrol bulguları").font(.headline)
+                ForEach(localRecord.openFindings) { item in
+                    Label(item.title, systemImage: item.status.systemIcon)
+                        .foregroundStyle(item.status == .failure ? Color.red : Color.orange)
+                    if !item.notes.isEmpty { Text(item.notes).font(.caption) }
+                }
+                ForEach(localRecord.openCapacitorFindings) { capacitor in
+                    MaintenanceCapacitorSummary(capacitor: capacitor)
+                }
+                Text("Giderilen bulguyu kapatmak için yeni ziyarette aynı kontrolü Tamam olarak işaretleyin.")
+                    .font(.caption).foregroundStyle(.gray)
+            }
+            .padding().frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
     private var riskInfo: (color: Color, label: String, detail: String) {
-        let recent = Array(sortedReadings.prefix(3))
-        let avgCos = recent.isEmpty ? nil : recent.reduce(0.0) { $0 + $1.cosPhi } / Double(recent.count)
-        let lastVisit = localRecord.visits.sorted { $0.date > $1.date }.first
-        var red = 0; var yellow = 0.0
-        if let cos = avgCos { if cos < 0.90 { red += 2 } else if cos < 0.95 { yellow += 1 } }
-        if localRecord.isOverdue { red += 1 } else if localRecord.isDueSoon { yellow += 1 }
-        if let v = lastVisit { red += v.failureCount; yellow += Double(v.warningCount) / 2.0 }
-        if red >= 2 { return (.red, "Yüksek Risk", "Acil müdahale gerektirir") }
-        if red >= 1 || yellow >= 2.0 { return (.orange, "Orta Risk", "Yakın zamanda incelenmeli") }
-        return (.green, "Düşük Risk", "Normal çalışma durumu")
+        if localRecord.hasOpenFailures || localRecord.lastStatus == .critical {
+            return (.red, "Yüksek Risk", "Açık arıza veya reaktif sınır aşımı var")
+        }
+        if !localRecord.openFindings.isEmpty || !localRecord.openCapacitorFindings.isEmpty || localRecord.lastStatus == .warning || localRecord.isOverdue {
+            return (.orange, "İnceleme gerekli", "Kontrol bulgularını ve bakım tarihini inceleyin")
+        }
+        guard localRecord.lastStatus != .unknown,
+              localRecord.visits.contains(where: { $0.isComplete }) else {
+            return (.gray, "Veri eksik", "Ölçüm ve tamamlanmış bakım gerekli")
+        }
+        return (.green, "Açık bulgu yok", "Kayıtlı kontrollerde sorun bildirilmedi")
     }
 
     private var facilityRiskCard: some View {
@@ -780,12 +808,12 @@ struct MaintenanceRecordDetailView: View {
         let lastVisit      = localRecord.visits.sorted { $0.date > $1.date }.first
 
         // Checklist: kind-based eşleştirme (yeni ziyaretler) + legacy string fallback (eski kayıtlar)
-        let capItems = lastVisit?.items.filter {
+        let capItems = localRecord.openFindings.filter {
             $0.kind == .capacitorVisual || $0.kind == .capacityMeasurement ||
             ($0.kind == nil && ($0.title.contains("Kondansatör") || $0.title.contains("Kapasite")))
-        } ?? []
-        let hasChecklistFailure = capItems.contains { $0.status == .failure }
-        let hasChecklistWarning = capItems.contains { $0.status == .warning }
+        }
+        let hasChecklistFailure = capItems.contains { $0.status == .failure } || localRecord.openCapacitorFindings.contains { $0.status == .failure }
+        let hasChecklistWarning = capItems.contains { $0.status == .warning } || localRecord.openCapacitorFindings.contains { $0.status == .warning }
         let recentCos = sortedReadings.prefix(3).reduce(0.0) { $0 + $1.cosPhi } / max(1, Double(min(3, sortedReadings.count)))
 
         let health:       String
@@ -793,7 +821,14 @@ struct MaintenanceRecordDetailView: View {
         let healthDetail: String
         let healthSource: String
 
-        if let measured = latestMeasured?.measuredKVAr, localRecord.totalKVAr > 0 {
+        if hasChecklistFailure || hasChecklistWarning {
+            health = hasChecklistFailure ? "Kritik" : "Dikkat"
+            healthColor = hasChecklistFailure ? .red : .orange
+            healthDetail = "Giderilmemiş kondansatör kontrol bulgusu var"
+            healthSource = "Bakım kontrol listesi"
+        } else if let measured = latestMeasured?.measuredKVAr, localRecord.totalKVAr > 0,
+                  let measurementDate = latestMeasured?.date,
+                  measurementDate >= (lastVisit?.date ?? .distantPast) {
             let ratio = measured / localRecord.totalKVAr
             let pct   = String(format: "%.0f", ratio * 100)
             healthSource = String(format: "Ölçülen: %.0f kVAr / Nominal: %.0f kVAr", measured, localRecord.totalKVAr)
@@ -814,10 +849,10 @@ struct MaintenanceRecordDetailView: View {
             // Ölçüm verisi yok — checklist tabanlı tahmin
             healthSource = ""
             let suffix = lastVisit != nil ? " (ölçüm girilmedi — tahmin)" : ""
-            if lastVisit == nil {
+            if lastVisit == nil || lastVisit?.isComplete != true {
                 health      = "Bilinmiyor"
                 healthColor = .gray
-                healthDetail = "Bakım ziyareti kaydı yok"
+                healthDetail = "Tamamlanmış güncel kontrol gerekli"
             } else if hasChecklistFailure {
                 health      = "Kritik"
                 healthColor = .red
@@ -871,7 +906,8 @@ struct MaintenanceRecordDetailView: View {
             }
         }
         if let lastVisit = localRecord.visits.sorted(by: { $0.date > $1.date }).first {
-            if lastVisit.failureCount > 0 { recs.append("Önceki arızaların takibi (\(lastVisit.failureCount) arıza)") }
+            let failureCount = localRecord.openFindings.filter { $0.status == .failure }.count
+            if failureCount > 0 { recs.append("Açık arızaların takibi (\(failureCount) arıza)") }
             let unc = lastVisit.items.filter { $0.status == .unchecked }
             if !unc.isEmpty { recs.append("Tamamlanmamış kontroller: \(unc.count) madde") }
         }
@@ -921,10 +957,15 @@ struct MaintenanceRecordDetailView: View {
                     .padding(.vertical, 12).frame(maxWidth: .infinity)
             } else {
                 ForEach(sorted) { visit in
-                    NavigationLink(destination: MaintenanceVisitDetailView(visit: visit)) {
-                        visitRow(visit)
+                    if visit.isComplete {
+                        NavigationLink(destination: MaintenanceVisitDetailView(visit: visit)) {
+                            visitRow(visit)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button { editingVisit = visit } label: { visitRow(visit) }
+                            .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -936,11 +977,11 @@ struct MaintenanceRecordDetailView: View {
     private func visitRow(_ visit: MaintenanceVisit) -> some View {
         let hasFailure = visit.failureCount > 0
         let hasWarning = visit.warningCount > 0
-        let sc: Color = hasFailure ? .red : hasWarning ? .orange : .green
+        let sc: Color = hasFailure ? .red : hasWarning ? .orange : visit.isComplete ? .green : .gray
         return HStack(spacing: 12) {
             ZStack {
                 Circle().fill(sc.opacity(0.13)).frame(width: 40, height: 40)
-                Image(systemName: hasFailure ? "xmark.circle.fill" : hasWarning ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                Image(systemName: hasFailure ? "xmark.circle.fill" : hasWarning ? "exclamationmark.triangle.fill" : visit.isComplete ? "checkmark.circle.fill" : "circle.dashed")
                     .font(.system(size: 18)).foregroundStyle(sc)
             }
             VStack(alignment: .leading, spacing: 3) {
@@ -966,7 +1007,7 @@ struct MaintenanceRecordDetailView: View {
                             .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundStyle(.orange)
                     }
                 }
-                Text("\(visit.completedCount)/\(visit.items.count) kontrol")
+                Text("\(visit.completedCount)/\(visit.items.count) kontrol\(visit.isComplete ? "" : " · Taslak")")
                     .font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
             }
         }
@@ -1008,43 +1049,11 @@ struct MaintenanceRecordDetailView: View {
 
     // MARK: Notification
 
-    private func scheduleNotification(for record: MaintenanceRecord) {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
-            guard granted else { return }
-            let center = UNUserNotificationCenter.current()
-            let id = record.id.uuidString
-            center.removePendingNotificationRequests(withIdentifiers: [id + "_warn", id + "_due"])
-            let name = record.customerName.isEmpty ? "Kompanzasyon Panosu" : record.customerName
-            let nextCheck = record.nextCheckDate
 
-            if let warnDate = Calendar.current.date(byAdding: .day, value: -7, to: nextCheck), warnDate > Date() {
-                let c = UNMutableNotificationContent()
-                c.title = "Bakım Kontrolü Yaklaşıyor ⚠️"
-                c.body  = "\(name) — kontrol tarihi 7 gün sonra."
-                c.sound = .default
-                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour], from: warnDate)
-                center.add(UNNotificationRequest(identifier: id + "_warn",
-                                                  content: c,
-                                                  trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
-            }
-
-            if nextCheck > Date() {
-                let c = UNMutableNotificationContent()
-                c.title = "Bakım Kontrolü Zamanı 🔧"
-                c.body  = "\(name) — bugün periyodik bakım kontrol günü!"
-                c.sound = .default
-                c.badge = 1
-                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour], from: nextCheck)
-                center.add(UNNotificationRequest(identifier: id + "_due",
-                                                  content: c,
-                                                  trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
-            }
-        }
-    }
 
     private func readingRow(_ reading: MaintenanceReading) -> some View {
         let cp = reading.cosPhi
-        let cpColor: Color = cp >= 0.95 ? .green : cp >= 0.90 ? .orange : .red
+        let cpColor: Color = reading.status.color
 
         var fieldParts = [String]()
         if let kv  = reading.measuredKVAr { fieldParts.append(String(format: "Ölçülen: %.0f kVAr", kv)) }
@@ -1063,8 +1072,8 @@ struct MaintenanceRecordDetailView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(String(format: "cos φ %.3f", cp))
                         .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(cpColor)
-                    if reading.estimatedPenalty > 0 {
-                        Text("-\(reading.estimatedPenalty.currencyFormatted)")
+                    if reading.totalEstimatedPenalty > 0 {
+                        Text("-\(reading.totalEstimatedPenalty.currencyFormatted)")
                             .font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
                     }
                     if reading.estimatedCapacitivePenalty > 0 {
@@ -1096,6 +1105,7 @@ struct MaintenanceVisitFormView: View {
     let onSave: (MaintenanceVisit) -> Void
 
     @State private var visit: MaintenanceVisit = .standard()
+    @State private var editingCapacitor: MaintenanceCapacitor?
     @State private var technicianText: String = ""
     @State private var overallNotes: String = ""
     @State private var expandedItem: UUID? = nil
@@ -1106,6 +1116,15 @@ struct MaintenanceVisitFormView: View {
 
     private let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
 
+    init(existingVisit: MaintenanceVisit? = nil, inventory: [MaintenanceCapacitor] = [], onSave: @escaping (MaintenanceVisit) -> Void) {
+        var initial = existingVisit ?? .standard()
+        if existingVisit == nil { initial.capacitors = inventory.map(\.awaitingInspection) }
+        self.onSave = onSave
+        _visit = State(initialValue: initial)
+        _technicianText = State(initialValue: initial.technician)
+        _overallNotes = State(initialValue: initial.overallNotes)
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -1115,7 +1134,7 @@ struct MaintenanceVisitFormView: View {
                         Group {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Ziyaret Tarihi").font(.system(size: 12, design: .rounded)).foregroundStyle(.gray)
-                                DatePicker("", selection: $visit.date, displayedComponents: .date)
+                                DatePicker("", selection: $visit.date, in: ...Date(), displayedComponents: .date)
                                     .datePickerStyle(.compact).labelsHidden()
                                     .colorScheme(.dark)
                             }
@@ -1147,6 +1166,7 @@ struct MaintenanceVisitFormView: View {
                         }
                         .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
 
+                        capacitorSection
                         visitPhotoSection
 
                         Button {
@@ -1161,11 +1181,11 @@ struct MaintenanceVisitFormView: View {
                                 }
                                 photoIDs.append(pid)
                             }
-                            visit.photoIDs = photoIDs
+                            visit.photoIDs.append(contentsOf: photoIDs)
                             onSave(visit)
                             dismiss()
                         } label: {
-                            Text("Kaydet")
+                            Text(visit.isComplete ? "Bakımı Tamamla" : "Taslak Kaydet")
                                 .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 15)
                                 .background(Capsule().fill(amber))
@@ -1192,6 +1212,33 @@ struct MaintenanceVisitFormView: View {
             }
             .sheet(isPresented: $showCamera) {
                 CameraPickerView { image in selectedImages.append(image) }
+            }
+        }
+    }
+
+    private var capacitorSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Kademe ve kondansatörler").font(.headline)
+            Text("Bir kademede birden fazla kondansatör varsa K1-C1, K1-C2 gibi ayrı kaydedin.")
+                .font(.caption).foregroundStyle(.gray)
+            ForEach(visit.capacitors ?? []) { capacitor in
+                Button { editingCapacitor = capacitor } label: {
+                    MaintenanceCapacitorSummary(capacitor: capacitor)
+                }.buttonStyle(.plain)
+            }
+            Button("Kondansatör ekle", systemImage: "plus.circle") {
+                editingCapacitor = MaintenanceCapacitor()
+            }
+        }.padding(14).background(Color.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 12))
+        .sheet(item: $editingCapacitor) { capacitor in
+            MaintenanceCapacitorEditor(capacitor: capacitor) { updated in
+                var entries = visit.capacitors ?? []
+                if let index = entries.firstIndex(where: { $0.id == updated.id }) {
+                    entries[index] = updated
+                } else {
+                    entries.append(updated)
+                }
+                visit.capacitors = entries
             }
         }
     }
@@ -1294,6 +1341,9 @@ struct MaintenanceVisitDetailView: View {
                     summaryBanner
                     if !photos.isEmpty { photoStrip }
                     itemsList
+                    ForEach(visit.capacitors ?? []) { capacitor in
+                        MaintenanceCapacitorSummary(capacitor: capacitor)
+                    }
                     if !visit.overallNotes.isEmpty {
                         notesCard
                     }
@@ -1426,8 +1476,8 @@ struct MaintenanceRecordFormView: View {
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
 
     private var isKVArInvalid: Bool {
-        !totalKVArStr.isEmpty &&
-        Double(totalKVArStr.replacingOccurrences(of: ",", with: ".")) == nil
+        guard let value = MaintenanceNumber.parse(totalKVArStr) else { return true }
+        return value <= 0
     }
 
     init(record: MaintenanceRecord?, onSave: @escaping (MaintenanceRecord) -> Void) {
@@ -1439,7 +1489,7 @@ struct MaintenanceRecordFormView: View {
             _panelBrand          = State(initialValue: r.panelBrand)
             _panelModel          = State(initialValue: r.panelModel)
             _installationDate    = State(initialValue: r.installationDate)
-            _totalKVArStr        = State(initialValue: String(format: "%.0f", r.totalKVAr))
+            _totalKVArStr        = State(initialValue: String(r.totalKVAr))
             _checkPeriodMonths   = State(initialValue: r.checkPeriodMonths)
             _expectedLifeYearsVal = State(initialValue: r.expectedLifeYears ?? 15)
         }
@@ -1470,7 +1520,7 @@ struct MaintenanceRecordFormView: View {
                             .padding(.top, 2)
                         }
                         Divider().background(amber.opacity(0.15))
-                        DatePicker("Kurulum Tarihi", selection: $installationDate, displayedComponents: .date)
+                        DatePicker("Kurulum Tarihi", selection: $installationDate, in: ...Date(), displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .font(.system(size: 14, design: .rounded))
                             .foregroundStyle(.white)
@@ -1513,18 +1563,20 @@ struct MaintenanceRecordFormView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {
+                        guard !isKVArInvalid, !customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                         var r = record ?? MaintenanceRecord()
                         r.customerName       = customerName
                         r.locationAddress    = locationAddress
                         r.panelBrand         = panelBrand
                         r.panelModel         = panelModel
                         r.installationDate   = installationDate
-                        r.totalKVAr          = Double(totalKVArStr.replacingOccurrences(of: ",", with: ".")) ?? 100
+                        r.totalKVAr          = MaintenanceNumber.parse(totalKVArStr) ?? 0
                         r.checkPeriodMonths  = checkPeriodMonths
                         r.expectedLifeYears  = expectedLifeYearsVal
                         onSave(r)
                         dismiss()
                     }
+                    .disabled(isKVArInvalid || customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(amber)
                 }
             }
@@ -1585,25 +1637,28 @@ struct MaintenanceReadingFormView: View {
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
 
-    private var activeKWh: Double  { Double(activeKWhStr.replacingOccurrences(of: ",", with: "."))  ?? 0 }
-    private var inductive: Double  { Double(inductiveStr.replacingOccurrences(of: ",", with: "."))  ?? 0 }
-    private var capacitive: Double { Double(capacitiveStr.replacingOccurrences(of: ",", with: ".")) ?? 0 }
+    private var activeKWh: Double  { MaintenanceNumber.parse(activeKWhStr)  ?? 0 }
+    private var inductive: Double  { MaintenanceNumber.parse(inductiveStr)  ?? 0 }
+    private var capacitive: Double { MaintenanceNumber.parse(capacitiveStr) ?? 0 }
 
-    private var computedCosPhi: Double {
-        guard activeKWh > 0 else { return 1.0 }
-        let netQ = inductive - capacitive
-        let s = sqrt(activeKWh * activeKWh + netQ * netQ)
-        guard s > 0 else { return 1.0 }
-        return min(1.0, activeKWh / s)
+    private var preview: MaintenanceReading {
+        var r = MaintenanceReading()
+        r.activeKWh = activeKWh; r.inductiveKVArh = inductive; r.capacitiveKVArh = capacitive
+        r.tariff = MaintenanceNumber.parse(tariffStr) ?? 0
+        return r
     }
-
-    private var cpColor: Color { computedCosPhi >= 0.95 ? .green : computedCosPhi >= 0.90 ? .orange : .red }
-    private var isOvercompensated: Bool { activeKWh > 0 && capacitive > activeKWh * 0.20 }
-    private var penaltyKVArh: Double { activeKWh > 0 ? max(0, inductive - activeKWh * 0.33) : 0 }
-    private var estimatedPenalty: Double { penaltyKVArh * (Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40) }
-
-    private var capacitivePenaltyKVArh: Double { activeKWh > 0 ? max(0, capacitive - activeKWh * 0.20) : 0 }
-    private var estimatedCapacitivePenalty: Double { capacitivePenaltyKVArh * (Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40) }
+    private var inputIsValid: Bool {
+        guard let active = MaintenanceNumber.parse(activeKWhStr), active > 0 else { return false }
+        let required = [inductiveStr, capacitiveStr, tariffStr]
+        let optional = [invoiceStr, measuredKVArStr, thdStr]
+        return required.allSatisfy { MaintenanceNumber.parse($0) != nil } &&
+            optional.allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || MaintenanceNumber.parse($0) != nil }
+    }
+    private var computedCosPhi: Double { preview.cosPhi }
+    private var cpColor: Color { inputIsValid ? preview.status.color : .gray }
+    private var isOvercompensated: Bool { preview.isOvercompensated }
+    private var estimatedPenalty: Double { preview.estimatedPenalty }
+    private var estimatedCapacitivePenalty: Double { preview.estimatedCapacitivePenalty }
 
     init(defaultTariff: Double, panelTotalKVAr: Double = 0, onSave: @escaping (MaintenanceReading) -> Void) {
         self.defaultTariff = defaultTariff
@@ -1616,6 +1671,10 @@ struct MaintenanceReadingFormView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    if !inputIsValid {
+                        Text("Aktif tüketim sıfırdan büyük olmalı. Endüktif, kapasitif ve tarife alanlarını doldurun; negatif veya geçersiz sayı kullanmayın.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     if activeKWh > 0 {
                         if inductive > 0 || capacitive > 0 {
                             liveStatusCard
@@ -1647,7 +1706,7 @@ struct MaintenanceReadingFormView: View {
                                 .multilineTextAlignment(.trailing)
                         }
                         Divider().background(amber.opacity(0.15))
-                        DatePicker("Tarih", selection: $date, displayedComponents: .date)
+                        DatePicker("Tarih", selection: $date, in: ...Date(), displayedComponents: .date)
                             .datePickerStyle(.compact)
                             .font(.system(size: 14, design: .rounded)).foregroundStyle(.white).colorScheme(.dark)
                     }
@@ -1670,7 +1729,7 @@ struct MaintenanceReadingFormView: View {
                         numericRow("Ölçülen Kapasite (kVAr)", $measuredKVArStr)
                         Divider().background(amber.opacity(0.15))
                         numericRow("THD (%)", $thdStr)
-                        let meas = Double(measuredKVArStr.replacingOccurrences(of: ",", with: "."))
+                        let meas = MaintenanceNumber.parse(measuredKVArStr)
                         if let m = meas, panelTotalKVAr > 0, m < panelTotalKVAr * 0.80 {
                             HStack(spacing: 6) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -1706,6 +1765,7 @@ struct MaintenanceReadingFormView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {
+                        guard inputIsValid else { return }
                         var r = MaintenanceReading()
                         r.id              = readingID
                         r.date            = date
@@ -1713,11 +1773,11 @@ struct MaintenanceReadingFormView: View {
                         r.activeKWh       = activeKWh
                         r.inductiveKVArh  = inductive
                         r.capacitiveKVArh = capacitive
-                        r.invoiceAmount   = Double(invoiceStr.replacingOccurrences(of: ",", with: ".")) ?? 0
-                        r.tariff          = Double(tariffStr.replacingOccurrences(of: ",", with: ".")) ?? 0.40
+                        r.invoiceAmount   = MaintenanceNumber.parse(invoiceStr) ?? 0
+                        r.tariff          = MaintenanceNumber.parse(tariffStr) ?? 0.40
                         r.notes           = notes
-                        r.measuredKVAr    = Double(measuredKVArStr.replacingOccurrences(of: ",", with: "."))
-                        r.thdPercent      = Double(thdStr.replacingOccurrences(of: ",", with: "."))
+                        r.measuredKVAr    = MaintenanceNumber.parse(measuredKVArStr)
+                        r.thdPercent      = MaintenanceNumber.parse(thdStr)
                         var photoIDs: [UUID] = []
                         for img in selectedImages {
                             guard let pid = PhotoStorageService.save(image: img, entityID: readingID) else {
@@ -1732,7 +1792,7 @@ struct MaintenanceReadingFormView: View {
                         dismiss()
                     }
                     .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(amber)
-                    .disabled(activeKWh <= 0)
+                    .disabled(!inputIsValid)
                 }
             }
             .alert("Fotoğraf kaydedilemedi", isPresented: $photoSaveFailed) {
@@ -1812,7 +1872,7 @@ struct MaintenanceReadingFormView: View {
                 Text("cos φ").font(.system(size: 11, design: .rounded)).foregroundStyle(.gray)
             }
             VStack(alignment: .leading, spacing: 5) {
-                let status = computedCosPhi >= 0.95 ? "✅ Cezasız" : computedCosPhi >= 0.90 ? "⚠️ Risk" : "❌ Cezalı"
+                let status = inputIsValid ? preview.status.label : "Geçerli ölçüm girin"
                 Text(status).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(cpColor)
                 if isOvercompensated {
                     Label("Aşırı Kompanzasyon!", systemImage: "exclamationmark.triangle.fill")

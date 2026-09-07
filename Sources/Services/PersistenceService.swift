@@ -242,9 +242,18 @@ final class PersistenceService: ObservableObject {
             maintenanceRecords.append(record)
         }
         persist(maintenanceRecords, key: Keys.maintenance)
+        if defaults === UserDefaults.standard { MaintenanceNotificationService.shared.schedule(record) }
     }
 
     func deleteMaintenanceRecord(id: UUID) {
+        guard let record = maintenanceRecords.first(where: { $0.id == id }) else { return }
+        MaintenanceNotificationService.shared.cancel(id: id)
+        for reading in record.readings {
+            for photo in reading.photoIDs { PhotoStorageService.delete(photoID: photo, entityID: reading.id) }
+        }
+        for visit in record.visits {
+            for photo in visit.photoIDs { PhotoStorageService.delete(photoID: photo, entityID: visit.id) }
+        }
         maintenanceRecords.removeAll { $0.id == id }
         persist(maintenanceRecords, key: Keys.maintenance)
     }

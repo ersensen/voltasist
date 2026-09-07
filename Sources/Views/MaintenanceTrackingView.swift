@@ -20,6 +20,10 @@ struct MaintenanceTrackingView: View {
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
 
+    init(initialQueue: MaintenanceQueue = .all) {
+        _selectedQueue = State(initialValue: initialQueue)
+    }
+
     var body: some View {
         ZStack {
             bgColor.ignoresSafeArea()
@@ -244,6 +248,39 @@ struct MaintenanceRecordDetailView: View {
         self._localRecord = State(initialValue: record)
     }
 
+    private var visitActionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(localRecord.customerName.isEmpty ? "Kompanzasyon panosu" : localRecord.customerName)
+                .font(.title2.bold()).foregroundStyle(.white)
+            if !localRecord.locationAddress.isEmpty {
+                Label(localRecord.locationAddress, systemImage: "mappin.and.ellipse")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Label("Sonraki bakım: " + localRecord.nextCheckDate.formatted(.dateTime.day().month(.abbreviated).year()), systemImage: "calendar")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(localRecord.isOverdue ? Color.red : Color.secondary)
+            Button {
+                if let draft = localRecord.visits.filter({ !$0.isComplete }).max(by: { $0.date < $1.date }) {
+                    editingVisit = draft
+                } else {
+                    showAddVisit = true
+                }
+            } label: {
+                Label(localRecord.visits.contains(where: { !$0.isComplete }) ? "Taslak ziyarete devam et" : "Ziyaret başlat", systemImage: "checklist")
+                    .font(.headline).foregroundStyle(.black)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(amber).clipShape(RoundedRectangle(cornerRadius: 12))
+            }.buttonStyle(.plain)
+            Button { showAddReading = true } label: {
+                Label("Sayaç ölçümü ekle", systemImage: "gauge.medium")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(amber)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }.buttonStyle(.plain)
+        }
+        .padding(16).background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
     private var sortedReadings: [MaintenanceReading] {
         localRecord.readings.sorted { $0.date > $1.date }
     }
@@ -251,14 +288,14 @@ struct MaintenanceRecordDetailView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
-                // Üst: risk skoru + 3 kritik metrik
+                visitActionCard
                 facilityRiskCard
                 openFindingsCard
-                criticalMetricsCard
 
                 // Detaylar accordion (varsayılan kapalı)
                 detailsToggleButton
                 if showDetails {
+                    criticalMetricsCard
                     recordInfoCard
                     if let latest = sortedReadings.first { currentStatusCard(latest) }
                     if localRecord.readings.count >= 2 { trendChartCard }
@@ -269,8 +306,8 @@ struct MaintenanceRecordDetailView: View {
                 }
 
                 // Her zaman görünür: ölçüm ve ziyaret geçmişi
-                readingListCard
                 visitHistoryCard
+                readingListCard
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)

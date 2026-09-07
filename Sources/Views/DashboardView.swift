@@ -18,17 +18,13 @@ struct DashboardView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
                 headerSection
-                kpiRow
-                NavigationLink {
-                    MaintenanceTrackingView()
-                } label: {
-                    maintenancePendingCard
-                }
-                .buttonStyle(.plain)
-                if vm.panelsWithCosPhiWarning > 0 {
-                    cosPhiWarningCard(count: vm.panelsWithCosPhiWarning)
-                }
+                dailyWorkSection
                 quickAccessSection
+                DisclosureGroup("İşletme özeti") {
+                    kpiRow.padding(.top, 12)
+                }
+                .font(.subheadline.weight(.semibold))
+                .tint(amber)
                 recentQuotesSection
             }
             .padding(.horizontal, 16)
@@ -58,6 +54,45 @@ struct DashboardView: View {
                 appeared = true
             }
         }
+    }
+
+    private var dailyWorkSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Bugün ne yapıyoruz?").font(.title3.bold()).foregroundStyle(.white)
+            VStack(spacing: 8) {
+                workLink("Bugünkü bakımlar", queue: .today, icon: "calendar", color: .cyan)
+                workLink("Geciken bakımlar", queue: .overdue, icon: "clock.badge.exclamationmark", color: .red)
+                workLink("Açık arızalar", queue: .failures, icon: "exclamationmark.triangle", color: .orange)
+            }
+            NavigationLink {
+                MaintenanceTrackingView()
+            } label: {
+                Label("Tüm panolar ve bakım kayıtları", systemImage: "arrow.right")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(amber)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func workLink(_ title: String, queue: MaintenanceQueue, icon: String, color: Color) -> some View {
+        let count = persistence.maintenanceRecords.filter { queue.includes($0) }.count
+        return NavigationLink {
+            MaintenanceTrackingView(initialQueue: queue)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.title3).foregroundStyle(count > 0 ? color : .gray)
+                    .frame(width: 28)
+                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.white)
+                Spacer()
+                Text("\(count)").font(.title3.bold()).foregroundStyle(count > 0 ? color : .gray)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.gray)
+            }
+            .padding(12).frame(minHeight: 52)
+            .background(Color.white.opacity(0.03)).clipShape(RoundedRectangle(cornerRadius: 12))
+        }.buttonStyle(.plain)
     }
 
     // MARK: Header

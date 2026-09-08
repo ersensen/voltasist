@@ -11,6 +11,7 @@ import SwiftUI
 /// Elektrik hesap alt sekmeleri
 enum CalcTab: Int, CaseIterable {
     case cable          = 0
+    case cableTray      = 8
     case load           = 1
     case lighting       = 2
     case compensation   = 3
@@ -21,6 +22,7 @@ enum CalcTab: Int, CaseIterable {
 
     var title: String {
         switch self {
+        case .cableTray:     return "Kablo Tavası"
         case .cable:         return "Kablo Kesit"
         case .load:          return "Yük / Güç"
         case .lighting:      return "Aydınlatma"
@@ -34,6 +36,7 @@ enum CalcTab: Int, CaseIterable {
 
     var icon: String {
         switch self {
+        case .cableTray:     return "rectangle.split.3x1"
         case .cable:         return "cable.connector"
         case .load:          return "bolt.circle.fill"
         case .lighting:      return "lightbulb.fill"
@@ -47,6 +50,7 @@ enum CalcTab: Int, CaseIterable {
 
     var color: Color {
         switch self {
+        case .cableTray:     return Color.mint
         case .cable:         return Color(red: 1.0, green: 0.75, blue: 0.0)
         case .load:          return Color.orange
         case .lighting:      return Color.cyan
@@ -180,6 +184,8 @@ struct ElectricCalculatorView: View {
     @ViewBuilder
     private var tabContent: some View {
         switch selectedTab {
+        case .cableTray:
+            CableTrayCalculatorView()
         case .cable:
             CableCalculatorView()
         case .load:

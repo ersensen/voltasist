@@ -18,11 +18,18 @@ extension PDFService {
                 for paragraph in text.components(separatedBy: "\n") {
                     var remainder = paragraph[...]
                     repeat {
-                        var end = remainder.endIndex
-                        while end > remainder.startIndex && (String(remainder[..<end]) as NSString).size(withAttributes: attrs).width > 515 {
-                            end = remainder.index(before: end)
+                        // Bound work per line, then binary-search the fitting prefix.
+                        let candidates = Array(remainder.prefix(200))
+                        var low = 0
+                        var high = candidates.count
+                        while low < high {
+                            let middle = (low + high + 1) / 2
+                            if (String(candidates.prefix(middle)) as NSString).size(withAttributes: attrs).width <= 515 {
+                                low = middle
+                            } else { high = middle - 1 }
                         }
-                        if end == remainder.startIndex && !remainder.isEmpty { end = remainder.index(after: end) }
+                        let count = candidates.isEmpty ? 0 : max(1, low)
+                        let end = remainder.index(remainder.startIndex, offsetBy: count)
                         if y + 20 > 800 { page() }
                         (String(remainder[..<end]) as NSString).draw(at: CGPoint(x: 40, y: y), withAttributes: attrs)
                         y += 17

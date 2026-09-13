@@ -130,44 +130,48 @@ struct PDFService {
                                        pageRect: CGRect,
                                        settings: AppSettings,
                                        quote: Quote) -> CGFloat {
+        let companyText = NSAttributedString(string: settings.companyName, attributes: [
+            .font: font(size: 17, weight: .bold), .foregroundColor: UIColor.white
+        ])
+        let detailText = NSAttributedString(string: settings.letterheadDetails, attributes: [
+            .font: font(size: 8.5), .foregroundColor: UIColor(white: 0.78, alpha: 1)
+        ])
+        let measureSize = CGSize(width: 275, height: CGFloat.greatestFiniteMagnitude)
+        let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        let companyHeight = ceil(companyText.boundingRect(with: measureSize, options: options, context: nil).height)
+        let detailHeight = ceil(detailText.boundingRect(with: measureSize, options: options, context: nil).height)
+        let headerHeight = max(Layout.headerHeight, 34 + companyHeight + detailHeight)
+
         let bandRect = CGRect(x: 0, y: 0,
                               width: pageRect.width,
-                              height: Layout.headerHeight)
+                              height: headerHeight)
+
 
         // Arka plan
         ctx.setFillColor(Palette.dark.cgColor)
         ctx.fill(bandRect)
 
         // Sol amber şerit (logo alanı)
-        let logoStripeRect = CGRect(x: 0, y: 0, width: 90, height: Layout.headerHeight)
+        let logoStripeRect = CGRect(x: 0, y: 0, width: 90, height: headerHeight)
         ctx.setFillColor(Palette.amber.cgColor)
         ctx.fill(logoStripeRect)
 
-        // Logo placeholder — elektrik sembolü (⚡)
-        let logoAttrs: [NSAttributedString.Key: Any] = [
-            .font: font(size: 38, weight: .bold),
-            .foregroundColor: Palette.dark
-        ]
-        let logoStr = NSAttributedString(string: "⚡", attributes: logoAttrs)
-        logoStr.draw(at: CGPoint(x: 22, y: (Layout.headerHeight - 46) / 2))
+        if let data = settings.companyLogoData, let logo = UIImage(data: data),
+           logo.size.width > 0, logo.size.height > 0 {
+            let scale = min(74 / logo.size.width, 74 / logo.size.height)
+            let size = CGSize(width: logo.size.width * scale, height: logo.size.height * scale)
+            UIColor.white.setFill()
+            ctx.fill(CGRect(x: 8, y: 18, width: 74, height: 74))
+            logo.draw(in: CGRect(x: 45 - size.width / 2, y: 55 - size.height / 2,
+                                width: size.width, height: size.height))
+        } else {
+            NSAttributedString(string: "⚡", attributes: [
+                .font: font(size: 38, weight: .bold), .foregroundColor: Palette.dark
+            ]).draw(at: CGPoint(x: 22, y: 32))
+        }
 
-        // Firma Adı
-        let companyAttrs: [NSAttributedString.Key: Any] = [
-            .font: font(size: 17, weight: .bold),
-            .foregroundColor: UIColor.white
-        ]
-        NSAttributedString(string: settings.companyName, attributes: companyAttrs)
-            .draw(at: CGPoint(x: 104, y: 18))
-
-        // Firma alt bilgileri
-        let infoAttrs: [NSAttributedString.Key: Any] = [
-            .font: font(size: 8.5),
-            .foregroundColor: UIColor(white: 0.78, alpha: 1)
-        ]
-        let taxNoStr = settings.taxNumber ?? "—"
-        let firmInfo = "\(settings.companyAddress)\nTel: \(settings.phone)  |  \(settings.email)\nVergi No: \(taxNoStr)  |  Vergi Dairesi: \(settings.taxOffice)"
-        NSAttributedString(string: firmInfo, attributes: infoAttrs)
-            .draw(in: CGRect(x: 104, y: 40, width: 260, height: 65))
+        companyText.draw(in: CGRect(x: 104, y: 16, width: 275, height: companyHeight))
+        detailText.draw(in: CGRect(x: 104, y: 22 + companyHeight, width: 275, height: detailHeight))
 
         // Teklif bilgileri (sağ üst)
         let rightX: CGFloat = pageRect.width - Layout.marginH - 160
@@ -193,7 +197,7 @@ struct PDFService {
         NSAttributedString(string: df.string(from: quote.validUntil), attributes: boldMetaAttrs)
             .draw(at: CGPoint(x: rightX, y: 91))
 
-        return Layout.headerHeight
+        return headerHeight
     }
 
     // MARK: - Müşteri Bilgileri
@@ -694,6 +698,9 @@ struct PDFService {
     // MARK: - Bakım Takip Raporu PDF
 
     static func generateMaintenancePDF(record: MaintenanceRecord, settings: AppSettings) -> Data {
+        if record.isSolar {
+            return generateSolarMaintenancePDF(record: record, settings: settings)
+        }
         let pageRect = CGRect(x: 0, y: 0, width: Layout.pageWidth, height: Layout.pageHeight)
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
         let df = DateFormatter()

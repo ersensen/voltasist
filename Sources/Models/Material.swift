@@ -160,6 +160,7 @@ struct Material: Codable, Identifiable {
 
 extension Material {
     /// Bu malzemeyi verilen miktarda bir QuoteItem'a dönüştür
+    /// Müşteri belgesine yalnızca satış bilgileri aktarılır; alış fiyatı, kâr marjı ve iç notlar aktarılmaz.
     func toQuoteItem(quantity: Double = 1.0, vatRate: Double = 0.20) -> QuoteItem {
         QuoteItem(
             id: UUID(),

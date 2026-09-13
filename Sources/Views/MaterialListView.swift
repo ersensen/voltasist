@@ -214,15 +214,7 @@ struct MaterialListView: View {
     }
 
     private func makeQuoteItem(from material: Material, quantity: Double = 1.0) -> QuoteItem {
-        QuoteItem(
-            title: material.name,
-            description: material.brand,
-            category: .material,
-            quantity: quantity,
-            unit: material.unit,
-            unitPrice: material.salePrice,
-            vatRate: persistence.settings.defaultVatRate
-        )
+        material.toQuoteItem(quantity: quantity, vatRate: persistence.settings.defaultVatRate)
     }
 
     // MARK: - Arama Çubuğu

@@ -107,6 +107,8 @@ struct CompensationCalculatorView: View {
 
     // Sekme
     @State private var selectedTab: CompTab = .input
+    @State private var showIntroduction = true
+    @State private var learningTargetCosPhi = 0.95
 
     // Giriş modu
     @State private var inputMode:    InputMode    = .instant
@@ -281,6 +283,7 @@ struct CompensationCalculatorView: View {
 
     private var inputTab: some View {
         VStack(spacing: 16) {
+            compensationIntroduction
             inputModeCard
             facilityTypeCard
             compMethodCard
@@ -290,6 +293,98 @@ struct CompensationCalculatorView: View {
             cosPhiResultCard
             penaltyResultCard
         }
+    }
+
+    // MARK: - Kompanzasyona giriş
+
+    private var compensationIntroduction: some View {
+        DisclosureGroup(isExpanded: $showIntroduction) {
+            VStack(alignment: .leading, spacing: 14) {
+                harmonicInfoCard(icon: "bolt.circle", color: .cyan,
+                    title: "1. Kompanzasyon nedir?",
+                    body: "Motor ve transformatör gibi endüktif yükler manyetik alan için reaktif güç çeker. Kondansatörler bu ihtiyacın bir bölümünü yükün yakınında karşılar; şebekeden çekilen reaktif güç azalır, güç faktörü iyileşir.")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    learningTerm("P • Aktif güç • kW", detail: "İşe, harekete ve ısıya dönüşen güç.")
+                    learningTerm("Q • Reaktif güç • kVAr", detail: "Kaynak ile yük arasında gidip gelen, alan oluşumunda rol alan güç.")
+                    learningTerm("S • Görünür güç • kVA", detail: "Gerilim ve akımın belirlediği toplam güç büyüklüğü.")
+                    learningTerm("cos φ • Güç faktörü", detail: "Sinüzoidal koşullarda P / S. 1'e yaklaştıkça aynı aktif güç için gereken akım azalır.")
+                }
+
+                harmonicInfoCard(icon: "arrow.down.right.circle", color: .green,
+                    title: "2. Neden yapılır?",
+                    body: "Aynı işi yaparken besleme akımını ve kompanzasyon noktasının şebeke tarafındaki I²R kayıplarını azaltır; kablo ve trafoda kapasite açar. Uygun işletmede reaktif enerji bedelini azaltabilir. Motorun yaptığı iş için gereken aktif enerji doğrudan ortadan kalkmaz.")
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("3. Nasıl hesaplanır?").font(.subheadline.bold()).foregroundStyle(.white)
+                    Text("Önce aynı çalışma anındaki P ve cos φ değerlerini ölç. S biliniyorsa, sinüzoidal koşullarda cos φ = P / S ile başla. Sonra mevcut değerden daha yüksek bir hedef seç.")
+                    Text("Qc = P × [tan(φ₁) − tan(φ₂)]\nφ₁ = acos(mevcut cos φ)\nφ₂ = acos(hedef cos φ)")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundStyle(amber)
+                        .textSelection(.enabled)
+                    Text("P kW girildiğinde Qc kVAr çıkar. Bu, endüktif yük için gereken ilave kapasitif güçtür. Mevcut değer hedefi karşılıyorsa ek kondansatör gerekmez.")
+                }
+                .font(.subheadline).foregroundStyle(.gray)
+
+                learningExample
+
+                harmonicInfoCard(icon: "list.number", color: .orange,
+                    title: "4. Hesaptan uygulamaya",
+                    body: "Giriş → ölçümleri ve hedefi gir. Kademe → değişen yüke uygun küçük adımları planla. Harmonik → ölçüm ve rezonans ihtiyacını değerlendir. Sonuç bir ön boyutlandırmadır; gerilim, yük profili ve ekipman verileriyle doğrulanır. Fazla kondansatör, düşük yükte kapasitif aşırı kompanzasyona yol açabilir.")
+
+                Text("Fatura kWh ve kVArh değerleri dönem enerjisidir; anlık kW ve kVAr değildir. Fatura oranı tek başına pik yükteki kademe ihtiyacını belirlemez. Harmonikli tesislerde toplam güç faktörü ile cos φ farklı olabilir; yalnızca bu formülle ekipman seçilmez.")
+                    .font(.caption).foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Link("Kaynak: Schneider Electric • Kompanzasyon rehberi",
+                     destination: URL(string: "https://www.electrical-installation.org/enwiki/Power_Factor_Correction")!)
+                    .font(.caption).foregroundStyle(amber)
+            }
+            .padding(.top, 14)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Kompanzasyonu Öğren", systemImage: "book.closed.fill")
+                    .font(.headline).foregroundStyle(.white)
+                Text("Nedir? Neden yapılır? Nasıl hesaplanır?")
+                    .font(.caption).foregroundStyle(.gray)
+            }
+        }
+        .tint(amber)
+        .padding(16)
+        .background(amber.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.25), lineWidth: 1))
+    }
+
+    private func learningTerm(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+            Text(detail).font(.caption).foregroundStyle(.gray)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var learningExample: some View {
+        let qc = CompensationEngine.calculateRequiredQc(
+            activePowerKW: 100, currentCosPhi: 0.80, targetCosPhi: learningTargetCosPhi)
+        let targetQ = 100 * tan(acos(learningTargetCosPhi))
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Birlikte hesaplayalım").font(.subheadline.bold()).foregroundStyle(.white)
+            Text("P = 100 kW • Mevcut cos φ = 0,80\nQ₁ = 100 × tan(acos(0,80)) = 75 kVAr")
+                .font(.caption).foregroundStyle(.gray)
+            Text("Hedef cos φ: \(learningTargetCosPhi, specifier: "%.2f")")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+            Slider(value: $learningTargetCosPhi, in: 0.85...0.99, step: 0.01)
+                .tint(amber)
+                .accessibilityLabel("Örnekteki hedef güç faktörü")
+                .accessibilityValue(String(format: "%.2f", learningTargetCosPhi))
+            Text("Qc = 75 − \(targetQ, specifier: "%.1f") = \(qc, specifier: "%.1f") kVAr")
+                .font(.system(.headline, design: .rounded)).foregroundStyle(amber)
+            Text("Hedefi değiştir ve gereken gücü karşılaştır. Bu eğitim örneği aşağıdaki tesis ölçümlerini değiştirmez.")
+                .font(.caption).foregroundStyle(.gray)
+        }
+        .padding(14).background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var inputModeCard: some View {

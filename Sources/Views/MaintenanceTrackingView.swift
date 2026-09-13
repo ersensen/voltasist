@@ -15,20 +15,22 @@ struct MaintenanceTrackingView: View {
 
     @EnvironmentObject private var persistence: PersistenceService
     @State private var showAddRecord = false
+    @State private var selectedType = "Tümü"
     @State private var selectedQueue: MaintenanceQueue = .all
 
     private let amber   = Color(red: 1.0, green: 0.75, blue: 0.0)
     private let bgColor = Color(red: 0.08, green: 0.08, blue: 0.10)
 
-    init(initialQueue: MaintenanceQueue = .all) {
+    init(initialQueue: MaintenanceQueue = .all, type: String = "Tümü") {
         _selectedQueue = State(initialValue: initialQueue)
+        _selectedType = State(initialValue: type)
     }
 
     var body: some View {
         ZStack {
             bgColor.ignoresSafeArea()
 
-            if persistence.maintenanceRecords.isEmpty {
+            if typeRecords.isEmpty {
                 emptyState
             } else {
                 ScrollView(showsIndicators: false) {
@@ -40,7 +42,7 @@ struct MaintenanceTrackingView: View {
                                     Button {
                                         selectedQueue = queue
                                     } label: {
-                                        Text("\(queue.rawValue) (\(persistence.maintenanceRecords.filter { queue.includes($0) }.count))")
+                                        Text("\(queue.rawValue) (\(persistence.maintenanceRecords.filter { queue.includes($0) && (selectedType == "Tümü" || $0.maintenanceTypeLabel == selectedType) }.count))")
                                             .font(.caption.weight(.semibold))
                                             .padding(10)
                                             .background(selectedQueue == queue ? amber.opacity(0.3) : Color.white.opacity(0.06))
@@ -51,10 +53,13 @@ struct MaintenanceTrackingView: View {
                             }
                         }
                         if visibleRecords.isEmpty {
-                            Text("Bu listede pano yok.").foregroundStyle(.gray).padding()
+                            Text("Bu listede bakım kaydı yok.").foregroundStyle(.gray).padding()
                         }
                         ForEach(visibleRecords) { record in
-                            NavigationLink(destination: MaintenanceRecordDetailView(record: record)) {
+                            NavigationLink {
+                                if record.isSolar { SolarMaintenanceDetailView(record: record) }
+                                else { MaintenanceRecordDetailView(record: record) }
+                            } label: {
                                 recordCell(record)
                             }
                             .buttonStyle(.plain)
@@ -71,7 +76,7 @@ struct MaintenanceTrackingView: View {
                 MaintenanceNotificationService.shared.schedule(record)
             }
         }
-        .navigationTitle("Bakım Takip")
+        .navigationTitle(selectedType == "Tümü" ? "Bakım Takip" : "\(selectedType) Bakım Takip")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -83,15 +88,19 @@ struct MaintenanceTrackingView: View {
             }
         }
         .sheet(isPresented: $showAddRecord) {
-            MaintenanceRecordFormView(record: nil) { newRecord in
+            MaintenanceRecordFormView(record: nil, initialSolar: selectedType == "Solar") { newRecord in
                 persistence.saveMaintenanceRecord(newRecord)
 
             }
         }
     }
 
+    private var typeRecords: [MaintenanceRecord] {
+        persistence.maintenanceRecords.filter { selectedType == "Tümü" || $0.maintenanceTypeLabel == selectedType }
+    }
+
     private var visibleRecords: [MaintenanceRecord] {
-        persistence.maintenanceRecords.filter { selectedQueue.includes($0) }.sorted {
+        persistence.maintenanceRecords.filter { selectedQueue.includes($0) && (selectedType == "Tümü" || $0.maintenanceTypeLabel == selectedType) }.sorted {
             if $0.hasOpenFailures != $1.hasOpenFailures { return $0.hasOpenFailures }
             return $0.nextCheckDate < $1.nextCheckDate
         }
@@ -101,9 +110,9 @@ struct MaintenanceTrackingView: View {
 
     private var summaryHeader: some View {
         HStack(spacing: 10) {
-            summaryCell("\(persistence.overdueMaintenanceCount)", label: "Gecikmiş", color: .red)
-            summaryCell("\(persistence.dueSoonMaintenanceCount)", label: "7 Günde Yaklaşan", color: .yellow)
-            summaryCell("\(persistence.maintenanceRecords.count)", label: "Toplam Pano", color: amber)
+            summaryCell("\(typeRecords.filter { $0.isOverdue }.count)", label: "Gecikmiş", color: .red)
+            summaryCell("\(typeRecords.filter { $0.isDueSoon }.count)", label: "7 Günde Yaklaşan", color: .yellow)
+            summaryCell("\(typeRecords.count)", label: "Toplam Tesis", color: amber)
         }
     }
 
@@ -134,7 +143,7 @@ struct MaintenanceTrackingView: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle().fill(sc.opacity(0.15)).frame(width: 44, height: 44)
-                    Image(systemName: record.isOverdue ? "exclamationmark.circle.fill" :
+                    Image(systemName: (record.isOverdue || record.hasOpenFailures) ? "exclamationmark.circle.fill" :
                                       record.isDueSoon ? "clock.badge.fill" : "checkmark.circle.fill")
                         .font(.system(size: 22)).foregroundStyle(sc)
                 }
@@ -150,9 +159,9 @@ struct MaintenanceTrackingView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(String(format: "%.0f kVAr", record.totalKVAr))
+                    Text(record.capacityLabel)
                         .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(amber)
-                    if let cp = record.lastCosPhi {
+                    if !record.isSolar, let cp = record.lastCosPhi {
                         Text(String(format: "cos φ %.3f", cp))
                             .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(record.lastStatus.color)
@@ -161,7 +170,7 @@ struct MaintenanceTrackingView: View {
             }
 
             HStack(spacing: 8) {
-                Text("Her \(record.checkPeriodMonths) ayda bir")
+                Text("\(record.maintenanceTypeLabel) • Her \(record.checkPeriodMonths) ayda bir")
                     .font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(.gray)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(Color.gray.opacity(0.15)))
@@ -192,7 +201,8 @@ struct MaintenanceTrackingView: View {
     }
 
     private func statusColor(for record: MaintenanceRecord) -> Color {
-        if record.isOverdue { return .red }
+        if record.isOverdue || record.hasOpenFailures { return .red }
+        if !record.openFindings.isEmpty { return .orange }
         if record.isDueSoon { return .yellow }
         return .green
     }
@@ -206,7 +216,7 @@ struct MaintenanceTrackingView: View {
                 .foregroundStyle(amber.opacity(0.35))
             Text("Bakım Kaydı Yok")
                 .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Text("Kompanzasyon panolarınızı takip etmek için\nyeni bir kayıt ekleyin.")
+            Text("Kompanzasyon ve solar tesislerini takip etmek için\nyeni bir kayıt ekleyin.")
                 .font(.system(size: 14, design: .rounded)).foregroundStyle(.gray)
                 .multilineTextAlignment(.center)
             Button { showAddRecord = true } label: {
@@ -1140,6 +1150,7 @@ struct MaintenanceRecordDetailView: View {
 struct MaintenanceVisitFormView: View {
     @Environment(\.dismiss) private var dismiss
     let onSave: (MaintenanceVisit) -> Void
+    let isSolar: Bool
 
     @State private var visit: MaintenanceVisit = .standard()
     @State private var editingCapacitor: MaintenanceCapacitor?
@@ -1153,9 +1164,10 @@ struct MaintenanceVisitFormView: View {
 
     private let amber = Color(red: 1.0, green: 0.78, blue: 0.25)
 
-    init(existingVisit: MaintenanceVisit? = nil, inventory: [MaintenanceCapacitor] = [], onSave: @escaping (MaintenanceVisit) -> Void) {
-        var initial = existingVisit ?? .standard()
-        if existingVisit == nil { initial.capacitors = inventory.map(\.awaitingInspection) }
+    init(existingVisit: MaintenanceVisit? = nil, isSolar: Bool = false, inventory: [MaintenanceCapacitor] = [], onSave: @escaping (MaintenanceVisit) -> Void) {
+        self.isSolar = isSolar
+        var initial = existingVisit ?? (isSolar ? .solarVisit() : .standard())
+        if existingVisit == nil && !isSolar { initial.capacitors = inventory.map(\.awaitingInspection) }
         self.onSave = onSave
         _visit = State(initialValue: initial)
         _technicianText = State(initialValue: initial.technician)
@@ -1203,10 +1215,15 @@ struct MaintenanceVisitFormView: View {
                         }
                         .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
 
-                        capacitorSection
+                        if isSolar {
+                            SolarMeasurementFields(measurements: Binding(
+                                get: { visit.solarMeasurements ?? SolarMaintenanceMeasurements() },
+                                set: { visit.solarMeasurements = $0 }))
+                        } else { capacitorSection }
                         visitPhotoSection
 
                         Button {
+                            guard visit.solarMeasurements?.isValid ?? true else { return }
                             visit.technician = technicianText
                             visit.overallNotes = overallNotes
                             var photoIDs: [UUID] = []
@@ -1228,6 +1245,7 @@ struct MaintenanceVisitFormView: View {
                                 .background(Capsule().fill(amber))
                         }
                         .buttonStyle(.plain)
+                        .disabled(!(visit.solarMeasurements?.isValid ?? true))
                     }
                     .padding(16)
                 }
@@ -1500,6 +1518,9 @@ struct MaintenanceRecordFormView: View {
     let record: MaintenanceRecord?
     let onSave: (MaintenanceRecord) -> Void
 
+    @State private var isSolar = false
+    @State private var panelCountText = "1"
+    @State private var inverterInfo = ""
     @State private var customerName: String      = ""
     @State private var locationAddress: String   = ""
     @State private var panelBrand: String        = ""
@@ -1517,16 +1538,20 @@ struct MaintenanceRecordFormView: View {
         return value <= 0
     }
 
-    init(record: MaintenanceRecord?, onSave: @escaping (MaintenanceRecord) -> Void) {
+    init(record: MaintenanceRecord?, initialSolar: Bool = false, onSave: @escaping (MaintenanceRecord) -> Void) {
         self.record = record
         self.onSave = onSave
+        _isSolar = State(initialValue: initialSolar)
         if let r = record {
+            _isSolar = State(initialValue: r.isSolar)
+            _panelCountText = State(initialValue: String(r.solar?.panelCount ?? 1))
+            _inverterInfo = State(initialValue: r.solar?.inverterInfo ?? "")
             _customerName        = State(initialValue: r.customerName)
             _locationAddress     = State(initialValue: r.locationAddress)
             _panelBrand          = State(initialValue: r.panelBrand)
             _panelModel          = State(initialValue: r.panelModel)
             _installationDate    = State(initialValue: r.installationDate)
-            _totalKVArStr        = State(initialValue: String(r.totalKVAr))
+            _totalKVArStr        = State(initialValue: String(r.solar?.installedKWp ?? r.totalKVAr))
             _checkPeriodMonths   = State(initialValue: r.checkPeriodMonths)
             _expectedLifeYearsVal = State(initialValue: r.expectedLifeYears ?? 15)
         }
@@ -1536,22 +1561,28 @@ struct MaintenanceRecordFormView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    Text(isSolar ? "Solar Bakım Kaydı" : "Kompanzasyon Bakım Kaydı")
+                        .font(.headline).foregroundStyle(.white)
                     formSection("Müşteri / Lokasyon") {
                         formRow("Müşteri Adı", $customerName, .default)
                         Divider().background(amber.opacity(0.15))
                         formRow("Adres / Lokasyon", $locationAddress, .default)
                     }
-                    formSection("Pano Bilgisi") {
-                        formRow("Marka", $panelBrand, .default)
+                    formSection(isSolar ? "Solar Tesis Bilgisi" : "Pano Bilgisi") {
+                        formRow(isSolar ? "Panel Markası" : "Marka", $panelBrand, .default)
                         Divider().background(amber.opacity(0.15))
-                        formRow("Model", $panelModel, .default)
+                        formRow(isSolar ? "Panel Modeli" : "Model", $panelModel, .default)
                         Divider().background(amber.opacity(0.15))
-                        formRow("Toplam kVAr", $totalKVArStr, .numberPad)
+                        formRow(isSolar ? "Kurulu Güç (kWp)" : "Toplam kVAr", $totalKVArStr, .decimalPad)
+                        if isSolar {
+                            formRow("Panel Adedi", $panelCountText, .numberPad)
+                            formRow("İnverter Marka / Model", $inverterInfo, .default)
+                        }
                         if isKVArInvalid {
                             HStack(spacing: 4) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.system(size: 10)).foregroundStyle(.red)
-                                Text("Geçersiz değer — kayıt 100 kVAr ile yapılacak")
+                                Text("Sıfırdan büyük bir kapasite girin")
                                     .font(.system(size: 10, design: .rounded)).foregroundStyle(.red)
                             }
                             .padding(.top, 2)
@@ -1583,6 +1614,8 @@ struct MaintenanceRecordFormView: View {
                             Text("Aylık").tag(1)
                             Text("2 Aylık").tag(2)
                             Text("3 Aylık").tag(3)
+                            Text("6 Aylık").tag(6)
+                            Text("Yıllık").tag(12)
                         }
                         .pickerStyle(.segmented)
                         .padding(.vertical, 4)
@@ -1607,13 +1640,17 @@ struct MaintenanceRecordFormView: View {
                         r.panelBrand         = panelBrand
                         r.panelModel         = panelModel
                         r.installationDate   = installationDate
-                        r.totalKVAr          = MaintenanceNumber.parse(totalKVArStr) ?? 0
+                        if isSolar {
+                            guard let count = Int(panelCountText), count > 0 else { return }
+                            r.solar = SolarMaintenanceSystem(installedKWp: MaintenanceNumber.parse(totalKVArStr) ?? 0,
+                                panelCount: count, inverterInfo: inverterInfo)
+                        } else { r.totalKVAr = MaintenanceNumber.parse(totalKVArStr) ?? 0 }
                         r.checkPeriodMonths  = checkPeriodMonths
                         r.expectedLifeYears  = expectedLifeYearsVal
                         onSave(r)
                         dismiss()
                     }
-                    .disabled(isKVArInvalid || customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled((isSolar && (Int(panelCountText) ?? 0) <= 0) || isKVArInvalid || customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(amber)
                 }
             }

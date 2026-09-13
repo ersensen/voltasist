@@ -125,23 +125,21 @@ struct QuotePreviewView: View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Image(systemName: "bolt.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(amber)
+                    if let data = persistence.settings.companyLogoData, let logo = UIImage(data: data) {
+                        Image(uiImage: logo).resizable().scaledToFit()
+                            .frame(width: 56, height: 56)
+                            .padding(4).background(Color.white).cornerRadius(6)
+                    } else {
+                        Image(systemName: "bolt.circle.fill")
+                            .font(.system(size: 22)).foregroundColor(amber)
+                    }
                     Text(persistence.settings.companyName.isEmpty ? "VoltAsist" : persistence.settings.companyName)
                         .font(.system(size: 18, weight: .black, design: .rounded))
                         .foregroundColor(.white)
                 }
-                if !persistence.settings.ownerName.isEmpty {
-                    Text(persistence.settings.ownerName)
-                        .font(.system(size: 13))
-                        .foregroundColor(.gray)
-                }
-                if !persistence.settings.phone.isEmpty {
-                    Text(persistence.settings.phone)
-                        .font(.system(size: 13))
-                        .foregroundColor(.gray)
-                }
+                Text(persistence.settings.letterheadDetails)
+                    .font(.system(size: 12)).foregroundColor(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()

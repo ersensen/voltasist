@@ -8,6 +8,10 @@ import Foundation
 // MARK: - Bakım Takip Kaydı
 
 struct MaintenanceRecord: Identifiable, Codable {
+    var solar: SolarMaintenanceSystem? = nil
+    var isSolar: Bool { solar != nil }
+    var maintenanceTypeLabel: String { isSolar ? "Solar" : "Kompanzasyon" }
+    var capacityLabel: String { solar.map { String(format: "%.2f kWp", $0.installedKWp) } ?? String(format: "%.0f kVAr", totalKVAr) }
     var id: UUID             = UUID()
     var customerName: String = ""
     var locationAddress: String = ""

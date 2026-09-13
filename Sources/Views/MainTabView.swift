@@ -115,7 +115,7 @@ struct MainTabView: View {
             .tag(AppTab.engineering)
 
             NavigationStack {
-                MaintenanceTrackingView()
+                MaintenanceHomeView()
             }
             .tabItem {
                 Label(AppTab.maintenance.title, systemImage: AppTab.maintenance.icon)

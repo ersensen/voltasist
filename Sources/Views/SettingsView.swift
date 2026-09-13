@@ -4,6 +4,7 @@
 // Firma bilgileri, fiyatlandırma parametreleri ve uygulama tercihleri ayar ekranı.
 
 import SwiftUI
+import UIKit
 
 // MARK: - SettingsView
 
@@ -12,6 +13,7 @@ struct SettingsView: View {
 
     @StateObject private var vm: SettingsViewModel
     @EnvironmentObject private var persistence: PersistenceService
+    @State private var showLogoPicker = false
     @State private var showResetAlert = false
     @State private var showSavedToast = false
 
@@ -71,6 +73,25 @@ struct SettingsView: View {
                 }
             }
         }
+        .sheet(isPresented: $showLogoPicker) {
+            PhotoPickerView(onSelect: { images in
+                guard let image = images.first, image.size.width > 0, image.size.height > 0 else { return }
+                let scale = min(1, 512 / max(image.size.width, image.size.height))
+                let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                vm.settings.companyLogoData = UIGraphicsImageRenderer(size: size, format: format)
+                    .image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }.pngData()
+            }, selectionLimit: 1)
+        }
+        .alert("Ayarlar kaydedilemedi", isPresented: Binding(
+            get: { vm.validationError != nil },
+            set: { if !$0 { vm.validationError = nil } }
+        )) {
+            Button("Tamam") { vm.validationError = nil }
+        } message: {
+            Text(vm.validationError ?? "")
+        }
         .alert("Varsayılanlara Dön?", isPresented: $showResetAlert) {
             Button("İptal", role: .cancel) {}
             Button("Sıfırla", role: .destructive) {
@@ -84,7 +105,23 @@ struct SettingsView: View {
     // MARK: - Firma Bilgileri
 
     private var companySection: some View {
-        settingsCard(title: "🏢 Firma Bilgileri", icon: "building.2.fill") {
+        settingsCard(title: "🏢 Firma Logosu ve Antet", icon: "building.2.fill") {
+            if let data = vm.settings.companyLogoData, let logo = UIImage(data: data) {
+                Image(uiImage: logo)
+                    .resizable().scaledToFit().frame(height: 80)
+                    .padding(8).background(Color.white).cornerRadius(8)
+            }
+            HStack {
+                Button(vm.settings.companyLogoData == nil ? "Logo Ekle" : "Logoyu Değiştir") {
+                    showLogoPicker = true
+                }
+                Spacer()
+                if vm.settings.companyLogoData != nil {
+                    Button("Logoyu Kaldır", role: .destructive) { vm.settings.companyLogoData = nil }
+                }
+            }
+            Text("Kaydettiğiniz logo ve firma bilgileri teklif önizlemesinde ve PDF antetinde kullanılır.")
+                .font(.caption).foregroundColor(.gray)
             settingsField(label: "Firma Adı", placeholder: "VoltAsist Elektrik", text: $vm.settings.companyName)
             settingsField(label: "Yetkili Adı", placeholder: "Ad Soyad", text: $vm.settings.ownerName)
             settingsField(label: "Telefon", placeholder: "0532 123 45 67", text: $vm.settings.phone)
@@ -93,6 +130,8 @@ struct SettingsView: View {
                 .keyboardType(.emailAddress)
                 .autocapitalization(.none)
             settingsField(label: "Adres", placeholder: "İl, İlçe, Mahalle...", text: $vm.settings.address)
+            settingsField(label: "Vergi Dairesi", placeholder: "Vergi dairesi", text: $vm.settings.taxOffice)
+            settingsField(label: "Ödeme Koşulları", placeholder: "Ödeme ve teslim koşulları", text: $vm.settings.paymentTerms)
             settingsField(label: "Vergi No", placeholder: "1234567890 (opsiyonel)",
                           text: Binding(get: { vm.settings.taxNumber ?? "" },
                                         set: { vm.settings.taxNumber = $0.isEmpty ? nil : $0 }))
@@ -114,6 +153,7 @@ struct SettingsView: View {
                     .foregroundColor(.gray)
                 Picker("", selection: $vm.settings.defaultVatRate) {
                     Text("%0").tag(0.0)
+                    Text("%1").tag(0.01)
                     Text("%10").tag(0.10)
                     Text("%20").tag(0.20)
                 }
@@ -297,6 +337,7 @@ struct SettingsView: View {
 
     private func saveSettings() {
         vm.save(to: persistence)
+        guard vm.validationError == nil else { return }
         withAnimation {
             showSavedToast = true
         }

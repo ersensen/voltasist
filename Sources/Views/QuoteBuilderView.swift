@@ -474,6 +474,7 @@ extension QuoteItemCategory {
 // MARK: - Kalem Formu Sheet
 
 struct QuoteItemFormSheet: View {
+    @EnvironmentObject private var persistence: PersistenceService
     @Environment(\.dismiss) private var dismiss
     var item: QuoteItem? = nil
     let onSave: (QuoteItem) -> Void
@@ -523,6 +524,7 @@ struct QuoteItemFormSheet: View {
                     }
                     Picker("KDV Oranı", selection: $vatRate) {
                         Text("%0").tag(0.0)
+                        Text("%1").tag(1.0)
                         Text("%10").tag(10.0)
                         Text("%20").tag(20.0)
                     }
@@ -577,7 +579,7 @@ struct QuoteItemFormSheet: View {
                             quantity: quantity,
                             unit: unit,
                             unitPrice: unitPrice,
-                            vatRate: vatRate > 1.0 ? vatRate / 100.0 : vatRate,
+                            vatRate: vatRate / 100.0,
                             discount: discount / 100
                         )
                         onSave(newItem)
@@ -598,6 +600,8 @@ struct QuoteItemFormSheet: View {
                     // vatRate model 0.20 formatında, State 20.0 formatında
                     vatRate     = item.vatRate > 1.0 ? item.vatRate : item.vatRate * 100
                     discount    = item.discount * 100
+                } else {
+                    vatRate = persistence.settings.defaultVatRate * 100
                 }
             }
         }

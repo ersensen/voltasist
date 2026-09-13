@@ -16,6 +16,9 @@ struct AppSettings: Codable {
     /// Firma adı veya serbest elektrikçi adı
     var companyName: String
 
+    /// Küçültülmüş PNG logo; eski ayar kayıtlarında bulunmayabilir.
+    var companyLogoData: Data? = nil
+
     /// Yetkili kişi / usta adı
     var ownerName: String
 
@@ -116,6 +119,14 @@ struct AppSettings: Codable {
     var formattedNextQuoteNumber: String {
         let year = Calendar.current.component(.year, from: Date())
         return String(format: "%@-%d-%03d", quotePrefix, year, nextQuoteNumber)
+    }
+
+    var letterheadDetails: String {
+        [ownerName, address, phone, email,
+         taxOffice.isEmpty ? "" : "Vergi Dairesi: \(taxOffice)",
+         (taxNumber ?? "").isEmpty ? "" : "Vergi No: \(taxNumber ?? "")"]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n")
     }
 
     // MARK: Varsayılan Ayarlar

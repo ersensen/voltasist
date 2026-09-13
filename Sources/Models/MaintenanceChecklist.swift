@@ -47,6 +47,7 @@ enum ChecklistItemStatus: String, Codable, CaseIterable {
 /// Başlık metni değişse dahi bu enum sayesinde madde eşleştirmesi güvenli kalır.
 /// Raw value String ve Codable — eski kayıtlarda kind yoksa nil decode edilir (Optional).
 enum ChecklistItemKind: String, Codable, CaseIterable {
+    case solarPanels, solarShading, solarCables, solarStructure, solarInverter, solarProtection, solarGrounding, solarProduction
     case terminalCheck       = "terminal_check"
     case corrosionCheck      = "corrosion_check"
     case capacitorVisual     = "capacitor_visual"
@@ -83,12 +84,13 @@ struct MaintenanceVisit: Identifiable, Codable {
     var photoIDs: [UUID]      = []
     /// Optional for records written before capacitor tracking.
     var capacitors: [MaintenanceCapacitor]? = nil
+    var solarMeasurements: SolarMaintenanceMeasurements? = nil
 
     var completedCount: Int { items.filter { $0.status != .unchecked }.count }
     var failureCount: Int   { items.filter { $0.status == .failure }.count + (capacitors ?? []).filter { $0.status == .failure }.count }
     var warningCount: Int   { items.filter { $0.status == .warning }.count + (capacitors ?? []).filter { $0.status == .warning }.count }
     var okCount: Int        { items.filter { $0.status == .ok }.count }
-    var isComplete: Bool    { !items.isEmpty && completedCount == items.count && (capacitors ?? []).allSatisfy { $0.isValid && $0.status != .unchecked } }
+    var isComplete: Bool    { !items.isEmpty && (solarMeasurements?.isValid ?? true) && completedCount == items.count && (capacitors ?? []).allSatisfy { $0.isValid && $0.status != .unchecked } }
 
     var failureItems: [ChecklistItem] { items.filter { $0.status == .failure } }
     var warningItems: [ChecklistItem] { items.filter { $0.status == .warning } }

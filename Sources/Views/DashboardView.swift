@@ -65,9 +65,9 @@ struct DashboardView: View {
                 workLink("Açık arızalar", queue: .failures, icon: "exclamationmark.triangle", color: .orange)
             }
             NavigationLink {
-                MaintenanceTrackingView()
+                MaintenanceHomeView()
             } label: {
-                Label("Tüm panolar ve bakım kayıtları", systemImage: "arrow.right")
+                Label("Tüm tesisler ve bakım kayıtları", systemImage: "arrow.right")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(amber)
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
@@ -347,9 +347,16 @@ struct DashboardView: View {
             HStack {
                 sectionTitle("📋 Son Teklifler")
                 Spacer()
-                Text("→ Tümü")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundColor(amber)
+                NavigationLink {
+                    EngineeringPanelView()
+                        .environmentObject(persistence)
+                } label: {
+                    Text("→ Tümü")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(amber)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
             }
 
             if persistence.quotes.isEmpty {
@@ -357,7 +364,14 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(persistence.quotes.sorted { $0.createdAt > $1.createdAt }.prefix(4)) { quote in
-                        dashboardQuoteRow(quote)
+                        NavigationLink {
+                            DashboardQuoteDetail(quote: quote, settings: persistence.settings)
+                                .environmentObject(persistence)
+                        } label: {
+                            dashboardQuoteRow(quote)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -407,6 +421,15 @@ struct DashboardView: View {
             Text("Henüz teklif yok")
                 .font(.system(size: 13))
                 .foregroundColor(.gray)
+            NavigationLink {
+                QuoteBuilderView().environmentObject(persistence)
+            } label: {
+                Label("İlk Teklifini Oluştur", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(amber)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
@@ -422,6 +445,19 @@ struct DashboardView: View {
 
     private var glassBG: some ShapeStyle {
         .ultraThinMaterial
+    }
+}
+
+/// Önizleme değişiklikleri sırasında teklif modelinin yeniden oluşturulmasını önler.
+private struct DashboardQuoteDetail: View {
+    @StateObject private var vm: QuoteViewModel
+
+    init(quote: Quote, settings: AppSettings) {
+        _vm = StateObject(wrappedValue: QuoteViewModel(existingQuote: quote, settings: settings))
+    }
+
+    var body: some View {
+        QuotePreviewView(vm: vm)
     }
 }
 

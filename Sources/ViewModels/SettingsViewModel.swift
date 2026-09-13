@@ -78,7 +78,7 @@ final class SettingsViewModel: ObservableObject {
             validationError = "Telefon numarası boş bırakılamaz."
             return false
         }
-        if settings.defaultVatRate < 0 || settings.defaultVatRate > 1.01 {
+        if !settings.defaultVatRate.isFinite || settings.defaultVatRate < 0 || settings.defaultVatRate > 1 {
             validationError = "KDV oranı 0.0–1.0 arasında olmalıdır (0.20 = %20)."
             return false
         }

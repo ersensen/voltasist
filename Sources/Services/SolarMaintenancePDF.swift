@@ -28,7 +28,12 @@ extension PDFService {
                                 low = middle
                             } else { high = middle - 1 }
                         }
-                        let count = candidates.isEmpty ? 0 : max(1, low)
+                        var count = candidates.isEmpty ? 0 : max(1, low)
+                        if count < candidates.count,
+                           let boundary = candidates.prefix(count).lastIndex(where: { $0.isWhitespace }),
+                           boundary > 0 {
+                            count = boundary + 1
+                        }
                         let end = remainder.index(remainder.startIndex, offsetBy: count)
                         if y + 20 > 800 { page() }
                         (String(remainder[..<end]) as NSString).draw(at: CGPoint(x: 40, y: y), withAttributes: attrs)

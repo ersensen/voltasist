@@ -149,6 +149,16 @@ struct EngineeringPanelView: View {
         .navigationTitle("Mühendislik")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink {
+                    SettingsView().environmentObject(persistence)
+                } label: {
+                    Label("Firma Logosu ve Antet", systemImage: "gearshape")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(amber)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 14) {
                     Button { showCustomers = true } label: {

@@ -18,6 +18,21 @@ struct DashboardView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
                 headerSection
+                NavigationLink {
+                    SettingsView().environmentObject(persistence)
+                } label: {
+                    HStack {
+                        Label("Firma Logosu ve Antet", systemImage: "building.2.crop.circle")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption)
+                    }
+                    .foregroundStyle(amber)
+                    .padding(16)
+                    .background(amber.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
                 dailyWorkSection
                 quickAccessSection
                 DisclosureGroup("İşletme özeti") {

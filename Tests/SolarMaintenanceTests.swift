@@ -62,7 +62,9 @@ final class SolarMaintenanceTests: XCTestCase {
         let text = try XCTUnwrap(pdf.string)
         XCTAssertTrue(text.contains("Solar Inverter"))
         XCTAssertTrue(text.contains("42.00 kWh"))
-        XCTAssertTrue(text.contains("SON_NOT"), "PDF ending (\(pdf.pageCount) pages): \(text.suffix(1000))")
+        // PDFKit may extract the underscore on a separate line, despite intact PDF content.
+        let compactText = text.filter { !$0.isWhitespace }
+        XCTAssertTrue(compactText.contains("SON_NOT"), "PDF ending (\(pdf.pageCount) pages): \(text.suffix(1000))")
         XCTAssertFalse(text.contains("cos φ"))
     }
 }
